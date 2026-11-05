@@ -2,8 +2,9 @@
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20(21H2%2B)%20%7C%20Windows%2011-0078D6.svg)](https://microsoft.com/windows)
+[![Privacy: Local Only](https://img.shields.io/badge/privacy-local--only-success.svg)](PRIVACY.md)
 
-**WinAudio** is a modern, high-performance Windows audio capture, monitoring, and routing toolkit written in Rust, with native Python bindings (`pyo3`) and a standalone command-line executable.
+**WinAudio** is a modern, high-performance Windows audio capture, monitoring, and routing toolkit by **SINARY™**, written in Rust, with native Python bindings (`pyo3`) and a standalone command-line executable.
 
 It captures digital audio from **specific applications** (e.g., Discord, Spotify, Chrome, games) directly in user-mode using Windows WASAPI Process Loopback — **without virtual audio cables, audio repeaters, or kernel drivers**.
 
@@ -274,10 +275,16 @@ fn main() -> anyhow::Result<()> {
 
 ---
 
-## 📄 License
+## 📄 License & Trademark
+
+Copyright © 2026 **SINARY™**. All rights reserved.
+
+**SINARY™** and the SINARY logo are trademarks of SINARY.
 
 Dual-licensed under either:
 - **MIT License** ([LICENSE-MIT](LICENSE-MIT))
 - **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE))
 
 at your option.
+
+For information on data safety, local-only processing, and privacy practices, see our [Privacy Policy](PRIVACY.md).
