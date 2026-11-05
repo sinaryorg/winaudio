@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use windows::core::Interface;
 use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, HWND, LPARAM, MAX_PATH, S_OK};
@@ -8,6 +9,10 @@ use windows::Win32::Media::Audio::{
     ISimpleAudioVolume, MMDeviceEnumerator,
 };
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+    TH32CS_SNAPPROCESS,
+};
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
@@ -30,11 +35,20 @@ pub enum SessionState {
 pub struct AudioSession {
     pub pid: u32,
     pub process_name: String,
+    pub host_app_name: Option<String>,
+    pub display_name: String,
     pub window_title: Option<String>,
     pub volume: f32,
     pub is_muted: bool,
     pub is_system_sound: bool,
     pub state: SessionState,
+}
+
+#[derive(Debug, Clone)]
+struct ProcessNode {
+    pid: u32,
+    parent_pid: u32,
+    exe_name: String,
 }
 
 pub struct SessionManager;
@@ -60,9 +74,127 @@ impl SessionManager {
         }
     }
 
+    /// Takes a rapid snapshot of the current OS process tree to resolve parent/child hierarchies.
+    fn build_process_tree() -> HashMap<u32, ProcessNode> {
+        let mut map = HashMap::new();
+        unsafe {
+            let snapshot = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+                Ok(s) => s,
+                Err(_) => return map,
+            };
+
+            let mut entry = PROCESSENTRY32W {
+                dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+                ..Default::default()
+            };
+
+            if Process32FirstW(snapshot, &mut entry).is_ok() {
+                loop {
+                    let null_pos = entry
+                        .szExeFile
+                        .iter()
+                        .position(|&c| c == 0)
+                        .unwrap_or(entry.szExeFile.len());
+                    let exe_name = String::from_utf16_lossy(&entry.szExeFile[..null_pos]);
+
+                    map.insert(
+                        entry.th32ProcessID,
+                        ProcessNode {
+                            pid: entry.th32ProcessID,
+                            parent_pid: entry.th32ParentProcessID,
+                            exe_name,
+                        },
+                    );
+
+                    if Process32NextW(snapshot, &mut entry).is_err() {
+                        break;
+                    }
+                }
+            }
+
+            let _ = CloseHandle(snapshot);
+        }
+        map
+    }
+
+    /// Resolves the true host application by walking up the process hierarchy.
+    /// This links background audio workers (like WebView2 or Chromium audio renderers)
+    /// to their parent user-facing application without any hardcoded names.
+    fn resolve_hierarchy(
+        pid: u32,
+        tree: &HashMap<u32, ProcessNode>,
+    ) -> (String, Option<String>, String, Option<String>) {
+        let base_exe = tree
+            .get(&pid)
+            .map(|p| p.exe_name.clone())
+            .unwrap_or_else(|| get_process_name_by_pid(pid).unwrap_or_else(|| format!("PID:{}", pid)));
+
+        // 1. Direct window title check
+        let direct_title = get_window_title_by_pid(pid);
+        if direct_title.is_some() {
+            return (base_exe.clone(), None, base_exe, direct_title);
+        }
+
+        // 2. Generic ancestor walk: stop at system processes or explorer.exe
+        let system_roots = [
+            "explorer.exe",
+            "services.exe",
+            "svchost.exe",
+            "wininit.exe",
+            "csrss.exe",
+            "smss.exe",
+            "lsass.exe",
+            "winlogon.exe",
+        ];
+
+        let mut curr_pid = pid;
+        let mut host_name: Option<String> = None;
+        let mut inherited_title: Option<String> = None;
+
+        while let Some(node) = tree.get(&curr_pid) {
+            let parent_pid = node.parent_pid;
+            if parent_pid == 0 || parent_pid == curr_pid {
+                break;
+            }
+
+            if let Some(parent) = tree.get(&parent_pid) {
+                let parent_exe_lower = parent.exe_name.to_lowercase();
+                if system_roots.iter().any(|&s| s == parent_exe_lower) {
+                    break;
+                }
+
+                // Check if this ancestor has a visible UI window
+                if let Some(title) = get_window_title_by_pid(parent_pid) {
+                    host_name = Some(parent.exe_name.clone());
+                    inherited_title = Some(title);
+                    break;
+                }
+
+                // If executable name changes along the chain (e.g. worker -> main app)
+                if parent.exe_name.to_lowercase() != base_exe.to_lowercase() {
+                    host_name = Some(parent.exe_name.clone());
+                }
+
+                curr_pid = parent_pid;
+            } else {
+                break;
+            }
+        }
+
+        let display_name = if let Some(ref host) = host_name {
+            let host_base = host.strip_suffix(".exe").unwrap_or(host);
+            format!("{} [{}]", base_exe, host_base)
+        } else {
+            base_exe.clone()
+        };
+
+        (base_exe, host_name, display_name, direct_title.or(inherited_title))
+    }
+
     /// Lists all current audio sessions and their process info.
     pub fn list_sessions() -> Result<Vec<AudioSession>> {
         let manager = Self::get_session_manager()?;
+        let process_tree = Self::build_process_tree();
         let mut sessions = Vec::new();
 
         unsafe {
@@ -71,7 +203,7 @@ impl SessionManager {
 
             for i in 0..count {
                 if let Ok(control) = enumerator.GetSession(i) {
-                    if let Ok(session) = Self::parse_session(&control) {
+                    if let Ok(session) = Self::parse_session(&control, &process_tree) {
                         sessions.push(session);
                     }
                 }
@@ -82,7 +214,10 @@ impl SessionManager {
     }
 
     /// Parses an `IAudioSessionControl` into a high-level `AudioSession`.
-    fn parse_session(control: &IAudioSessionControl) -> Result<AudioSession> {
+    fn parse_session(
+        control: &IAudioSessionControl,
+        tree: &HashMap<u32, ProcessNode>,
+    ) -> Result<AudioSession> {
         unsafe {
             let control2: IAudioSessionControl2 = control.cast()?;
             let pid = control2.GetProcessId()?;
@@ -103,25 +238,32 @@ impl SessionManager {
             let volume = simple_vol.GetMasterVolume()?;
             let is_muted = simple_vol.GetMute()?.as_bool();
 
-            let process_name = if is_system_sound || pid == 0 {
-                "System Sounds".to_string()
-            } else {
-                get_process_name_by_pid(pid).unwrap_or_else(|| format!("PID:{}", pid))
-            };
+            if is_system_sound || pid == 0 {
+                return Ok(AudioSession {
+                    pid: 0,
+                    process_name: "System Sounds".to_string(),
+                    host_app_name: None,
+                    display_name: "System Sounds".to_string(),
+                    window_title: None,
+                    volume,
+                    is_muted,
+                    is_system_sound: true,
+                    state,
+                });
+            }
 
-            let window_title = if pid > 0 {
-                get_window_title_by_pid(pid)
-            } else {
-                None
-            };
+            let (process_name, host_app_name, display_name, window_title) =
+                Self::resolve_hierarchy(pid, tree);
 
             Ok(AudioSession {
                 pid,
                 process_name,
+                host_app_name,
+                display_name,
                 window_title,
                 volume,
                 is_muted,
-                is_system_sound,
+                is_system_sound: false,
                 state,
             })
         }
@@ -188,14 +330,35 @@ impl SessionManager {
         }
     }
 
-    /// Finds sessions by executable name (e.g. "spotify.exe", case-insensitive).
-    pub fn find_by_name(name: &str) -> Result<Vec<AudioSession>> {
+    /// Finds sessions by query string, matching process name, host app name, or window title.
+    /// Results are automatically prioritized so that currently Active audio sessions come first.
+    pub fn find_by_name(query: &str) -> Result<Vec<AudioSession>> {
         let sessions = Self::list_sessions()?;
-        let lower = name.to_lowercase();
-        let matched = sessions
+        let lower = query.to_lowercase();
+        let mut matched: Vec<AudioSession> = sessions
             .into_iter()
-            .filter(|s| s.process_name.to_lowercase().contains(&lower))
+            .filter(|s| {
+                s.process_name.to_lowercase().contains(&lower)
+                    || s.display_name.to_lowercase().contains(&lower)
+                    || s.host_app_name
+                        .as_ref()
+                        .map(|h| h.to_lowercase().contains(&lower))
+                        .unwrap_or(false)
+                    || s.window_title
+                        .as_ref()
+                        .map(|w| w.to_lowercase().contains(&lower))
+                        .unwrap_or(false)
+            })
             .collect();
+
+        // Sort so that Active audio sessions appear first
+        matched.sort_by_key(|s| match s.state {
+            SessionState::Active => 0,
+            SessionState::Inactive => 1,
+            SessionState::Expired => 2,
+            SessionState::Unknown => 3,
+        });
+
         Ok(matched)
     }
 

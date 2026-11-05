@@ -16,6 +16,10 @@ pub struct PyAudioSession {
     #[pyo3(get)]
     pub name: String,
     #[pyo3(get)]
+    pub display_name: String,
+    #[pyo3(get)]
+    pub host_name: Option<String>,
+    #[pyo3(get)]
     pub window_title: Option<String>,
     #[pyo3(get)]
     pub volume: f32,
@@ -47,8 +51,13 @@ impl PyAudioSession {
 
     fn __repr__(&self) -> String {
         format!(
-            "<AudioSession pid={} name='{}' volume={:.2} muted={}>",
-            self.pid, self.name, self.volume, self.is_muted
+            "<AudioSession pid={} app='{}' window='{}' volume={:.2} muted={} state={}>",
+            self.pid,
+            self.display_name,
+            self.window_title.as_deref().unwrap_or("-"),
+            self.volume,
+            self.is_muted,
+            self.state
         )
     }
 }
@@ -66,6 +75,8 @@ impl From<CoreSession> for PyAudioSession {
         Self {
             pid: s.pid,
             name: s.process_name,
+            display_name: s.display_name,
+            host_name: s.host_app_name,
             window_title: s.window_title,
             volume: s.volume,
             is_muted: s.is_muted,

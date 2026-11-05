@@ -115,7 +115,7 @@ fn cmd_list(show_all: bool) -> Result<()> {
     let sessions = list_sessions().context("Failed to enumerate audio sessions")?;
 
     println!(
-        "\n{:<8} {:<24} {:<30} {:<10} {:<8} {:<10}",
+        "\n{:<8} {:<30} {:<30} {:<10} {:<8} {:<10}",
         "PID".bold().cyan(),
         "APPLICATION".bold().cyan(),
         "WINDOW TITLE".bold().cyan(),
@@ -123,7 +123,7 @@ fn cmd_list(show_all: bool) -> Result<()> {
         "MUTED".bold().cyan(),
         "STATE".bold().cyan(),
     );
-    println!("{}", "─".repeat(94).dimmed());
+    println!("{}", "─".repeat(100).dimmed());
 
     let mut count = 0;
     for s in sessions {
@@ -152,9 +152,9 @@ fn cmd_list(show_all: bool) -> Result<()> {
         };
 
         println!(
-            "{:<8} {:<24} {:<30} {:<10} {:<8} {:<10}",
+            "{:<8} {:<30} {:<30} {:<10} {:<8} {:<10}",
             s.pid,
-            s.process_name.bright_white(),
+            s.display_name.bright_white(),
             truncated_title.dimmed(),
             format!("{:.0}%", s.volume * 100.0).bright_yellow(),
             mute_str,
@@ -163,7 +163,7 @@ fn cmd_list(show_all: bool) -> Result<()> {
         count += 1;
     }
 
-    println!("{}", "─".repeat(94).dimmed());
+    println!("{}", "─".repeat(100).dimmed());
     println!("Total audio sessions displayed: {}\n", count.to_string().bold());
     Ok(())
 }
