@@ -9,18 +9,12 @@ on:
 jobs:
   check-and-test:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        target:
-          - x86_64-pc-windows-msvc
-          - aarch64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
           components: clippy, rustfmt
 
       - name: Rustfmt Check
@@ -29,12 +23,11 @@ jobs:
       - name: Clippy Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Run Tests (x86_64)
-        if: matrix.target == 'x86_64-pc-windows-msvc'
+      - name: Run Tests
         run: cargo test --workspace
 
       - name: Build Release CLI
-        run: cargo build --release -p winaudio-cli --target ${{ matrix.target }}
+        run: cargo build --release -p winaudio-cli
 
       - name: Build Release Python Extension
-        run: cargo build --release -p winaudio-python --target ${{ matrix.target }}
+        run: cargo build --release -p winaudio-python
