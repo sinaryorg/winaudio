@@ -46,7 +46,6 @@ pub struct AudioSession {
 
 #[derive(Debug, Clone)]
 struct ProcessNode {
-    pid: u32,
     parent_pid: u32,
     exe_name: String,
 }
@@ -100,7 +99,6 @@ impl SessionManager {
                     map.insert(
                         entry.th32ProcessID,
                         ProcessNode {
-                            pid: entry.th32ProcessID,
                             parent_pid: entry.th32ParentProcessID,
                             exe_name,
                         },
@@ -129,13 +127,9 @@ impl SessionManager {
             .map(|p| p.exe_name.clone())
             .unwrap_or_else(|| get_process_name_by_pid(pid).unwrap_or_else(|| format!("PID:{}", pid)));
 
-        // 1. Direct window title check
         let direct_title = get_window_title_by_pid(pid);
-        if direct_title.is_some() {
-            return (base_exe.clone(), None, base_exe, direct_title);
-        }
 
-        // 2. Generic ancestor walk: stop at system processes or explorer.exe
+        // Generic ancestor walk: stop at system processes or explorer.exe
         let system_roots = [
             "explorer.exe",
             "services.exe",
@@ -149,7 +143,7 @@ impl SessionManager {
 
         let mut curr_pid = pid;
         let mut host_name: Option<String> = None;
-        let mut inherited_title: Option<String> = None;
+        let mut ancestor_title: Option<String> = None;
 
         while let Some(node) = tree.get(&curr_pid) {
             let parent_pid = node.parent_pid;
@@ -163,14 +157,14 @@ impl SessionManager {
                     break;
                 }
 
-                // Check if this ancestor has a visible UI window
-                if let Some(title) = get_window_title_by_pid(parent_pid) {
-                    host_name = Some(parent.exe_name.clone());
-                    inherited_title = Some(title);
-                    break;
+                // If ancestor has a visible top-level window title
+                if ancestor_title.is_none() {
+                    if let Some(title) = get_window_title_by_pid(parent_pid) {
+                        ancestor_title = Some(title);
+                    }
                 }
 
-                // If executable name changes along the chain (e.g. worker -> main app)
+                // If parent executable name differs from child (e.g. worker -> main app)
                 if parent.exe_name.to_lowercase() != base_exe.to_lowercase() {
                     host_name = Some(parent.exe_name.clone());
                 }
@@ -181,6 +175,8 @@ impl SessionManager {
             }
         }
 
+        let window_title = direct_title.or(ancestor_title);
+
         let display_name = if let Some(ref host) = host_name {
             let host_base = host.strip_suffix(".exe").unwrap_or(host);
             format!("{} [{}]", base_exe, host_base)
@@ -188,7 +184,7 @@ impl SessionManager {
             base_exe.clone()
         };
 
-        (base_exe, host_name, display_name, direct_title.or(inherited_title))
+        (base_exe, host_name, display_name, window_title)
     }
 
     /// Lists all current audio sessions and their process info.
@@ -331,27 +327,38 @@ impl SessionManager {
     }
 
     /// Finds sessions by query string, matching process name, host app name, or window title.
-    /// Results are automatically prioritized so that currently Active audio sessions come first.
+    /// Automatically strips .exe suffix so 'app' and 'app.exe' behave identically.
+    /// Results are prioritized so that currently Active audio sessions come first.
     pub fn find_by_name(query: &str) -> Result<Vec<AudioSession>> {
         let sessions = Self::list_sessions()?;
-        let lower = query.to_lowercase();
+        let trimmed = query.trim();
+        let clean_query = trimmed
+            .strip_suffix(".exe")
+            .unwrap_or(trimmed)
+            .to_lowercase();
+
         let mut matched: Vec<AudioSession> = sessions
             .into_iter()
             .filter(|s| {
-                s.process_name.to_lowercase().contains(&lower)
-                    || s.display_name.to_lowercase().contains(&lower)
-                    || s.host_app_name
-                        .as_ref()
-                        .map(|h| h.to_lowercase().contains(&lower))
-                        .unwrap_or(false)
-                    || s.window_title
-                        .as_ref()
-                        .map(|w| w.to_lowercase().contains(&lower))
-                        .unwrap_or(false)
+                let p_clean = s
+                    .process_name
+                    .strip_suffix(".exe")
+                    .unwrap_or(&s.process_name)
+                    .to_lowercase();
+                let d_clean = s.display_name.to_lowercase();
+                let h_clean = s.host_app_name.as_ref().map(|h| {
+                    h.strip_suffix(".exe").unwrap_or(h).to_lowercase()
+                });
+                let w_clean = s.window_title.as_ref().map(|w| w.to_lowercase());
+
+                p_clean.contains(&clean_query)
+                    || d_clean.contains(&clean_query)
+                    || h_clean.map(|h| h.contains(&clean_query)).unwrap_or(false)
+                    || w_clean.map(|w| w.contains(&clean_query)).unwrap_or(false)
             })
             .collect();
 
-        // Sort so that Active audio sessions appear first
+        // Sort so that Active audio sessions appear first!
         matched.sort_by_key(|s| match s.state {
             SessionState::Active => 0,
             SessionState::Inactive => 1,

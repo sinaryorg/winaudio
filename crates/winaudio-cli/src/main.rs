@@ -282,10 +282,17 @@ fn cmd_record(
         .context("Failed to start process loopback audio capture")?;
 
     let resolved_pid = capture.target_pid();
+    let app_info = SessionManager::find_by_pid(resolved_pid)
+        .ok()
+        .flatten()
+        .map(|s| s.display_name)
+        .unwrap_or_else(|| format!("PID {}", resolved_pid));
+
     println!(
-        "{} Capturing audio from PID {} ({} Hz, {} ch) for {} seconds...",
+        "{} Capturing audio from PID {} [{}] ({} Hz, {}) for {} seconds...",
         "▶".green().bold(),
         resolved_pid.to_string().yellow(),
+        app_info.cyan(),
         sample_rate,
         if channels == 1 { "mono" } else { "stereo" },
         duration_secs
