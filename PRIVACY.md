@@ -1,6 +1,6 @@
 # 🔒 Privacy Policy
 
-**Effective Date:** 2026-01-01  
+**Effective Date:** November 6, 2026  
 **Product:** WinAudio  
 **Trademark:** SINARY™  
 
