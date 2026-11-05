@@ -74,6 +74,10 @@ enum Commands {
         #[arg(short, long)]
         window: Option<String>,
 
+        /// Process to EXCLUDE (captures all system audio EXCEPT this application)
+        #[arg(short, long)]
+        exclude: Option<String>,
+
         /// Output WAV file path
         #[arg(short, long, default_value = "recorded_audio.wav")]
         out: PathBuf,
@@ -103,11 +107,21 @@ fn main() -> Result<()> {
             pid,
             name,
             window,
+            exclude,
             out,
             duration,
             sample_rate,
             channels,
-        } => cmd_record(pid, name, window, out, duration, sample_rate, channels),
+        } => cmd_record(
+            pid,
+            name,
+            window,
+            exclude,
+            out,
+            duration,
+            sample_rate,
+            channels,
+        ),
     }
 }
 
@@ -254,19 +268,22 @@ fn cmd_record(
     pid: Option<u32>,
     name: Option<String>,
     window: Option<String>,
+    exclude: Option<String>,
     out: PathBuf,
     duration_secs: u64,
     sample_rate: u32,
     channels: u16,
 ) -> Result<()> {
-    let target = if let Some(p) = pid {
-        TargetProcess::ByPid(p)
+    let (target, mode) = if let Some(ex) = exclude {
+        (TargetProcess::ByName(ex), winaudio_core::CaptureMode::Exclude)
+    } else if let Some(p) = pid {
+        (TargetProcess::ByPid(p), winaudio_core::CaptureMode::Include)
     } else if let Some(n) = name {
-        TargetProcess::ByName(n)
+        (TargetProcess::ByName(n), winaudio_core::CaptureMode::Include)
     } else if let Some(w) = window {
-        TargetProcess::ByWindowTitle(w)
+        (TargetProcess::ByWindowTitle(w), winaudio_core::CaptureMode::Include)
     } else {
-        bail!("You must specify --pid <PID>, --name <NAME>, or --window <TITLE>");
+        bail!("You must specify --name <NAME>, --pid <PID>, --window <TITLE>, or --exclude <NAME>");
     };
 
     println!(
@@ -275,6 +292,7 @@ fn cmd_record(
     );
 
     let capture = AudioCapture::builder(target)
+        .mode(mode)
         .sample_rate(sample_rate)
         .channels(channels)
         .format(AudioFormat::Pcm16)
@@ -288,15 +306,27 @@ fn cmd_record(
         .map(|s| s.display_name)
         .unwrap_or_else(|| format!("PID {}", resolved_pid));
 
-    println!(
-        "{} Capturing audio from PID {} [{}] ({} Hz, {}) for {} seconds...",
-        "▶".green().bold(),
-        resolved_pid.to_string().yellow(),
-        app_info.cyan(),
-        sample_rate,
-        if channels == 1 { "mono" } else { "stereo" },
-        duration_secs
-    );
+    if mode == winaudio_core::CaptureMode::Exclude {
+        println!(
+            "{} Capturing all system audio EXCLUDING PID {} [{}] ({} Hz, {}) for {} seconds...",
+            "▶".yellow().bold(),
+            resolved_pid.to_string().yellow(),
+            app_info.cyan(),
+            sample_rate,
+            if channels == 1 { "mono" } else { "stereo" },
+            duration_secs
+        );
+    } else {
+        println!(
+            "{} Capturing audio from PID {} [{}] ({} Hz, {}) for {} seconds...",
+            "▶".green().bold(),
+            resolved_pid.to_string().yellow(),
+            app_info.cyan(),
+            sample_rate,
+            if channels == 1 { "mono" } else { "stereo" },
+            duration_secs
+        );
+    }
 
     let pb = ProgressBar::new(duration_secs);
     pb.set_style(

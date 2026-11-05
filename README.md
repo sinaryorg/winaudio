@@ -39,6 +39,9 @@ winaudio record --name spotify.exe --out music.wav --duration 10
 # Capture audio from Discord downmixed to 16kHz mono (ideal for Whisper AI)
 winaudio record --name discord.exe --sample-rate 16000 --channels 1 --out meeting.wav
 
+# EXCLUDE MODE: Record all PC/game audio EXCEPT Spotify (streamer/clipping mode)
+winaudio record --exclude spotify.exe --out gameplay_clean.wav --duration 30
+
 # Adjust application volume
 winaudio volume --name spotify.exe --set 0.65
 
@@ -64,7 +67,11 @@ with winaudio.Capture(name="discord.exe", sample_rate=16000, channels=1) as cap:
     print(f"Recording from PID {cap.target_pid}...")
     cap.record_to_wav("call.wav", duration_seconds=5.0)
 
-# 4. Stream real-time audio frames (e.g., for local AI / Whisper streaming)
+# 4. Record everything EXCEPT Spotify (streamer mode)
+with winaudio.Capture(name="spotify.exe", exclude=True) as cap:
+    cap.record_to_wav("gameplay_no_music.wav", duration_seconds=10.0)
+
+# 5. Stream real-time audio frames (e.g., for local AI / Whisper streaming)
 with winaudio.Capture(name="chrome.exe", sample_rate=16000, channels=1) as cap:
     while True:
         frame_bytes = cap.read_frame(timeout_ms=100)

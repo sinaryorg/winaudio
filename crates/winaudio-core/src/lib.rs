@@ -4,7 +4,10 @@ pub mod dsp;
 pub mod errors;
 pub mod sessions;
 
-pub use capture::{AudioCapture, AudioFormat, AudioFrame, CaptureBuilder, CaptureConfig, TargetProcess};
+pub use capture::{
+    AudioCapture, AudioFormat, AudioFrame, CaptureBuilder, CaptureConfig, CaptureMode,
+    TargetProcess,
+};
 pub use errors::{Result, WinAudioError};
 pub use sessions::{AudioSession, SessionManager, SessionState};
 

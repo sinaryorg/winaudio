@@ -17,7 +17,7 @@ use windows::Win32::System::Threading::{
     CreateEventW, OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
 };
 
-use crate::com::{activate_process_loopback_client, ensure_mta};
+use crate::com::{activate_process_loopback_client, ensure_mta, ProcessLoopbackMode};
 use crate::dsp::{downmix_to_mono, downmix_to_stereo, f32_to_pcm16, pcm16_to_bytes, resample_linear};
 use crate::errors::{Result, WinAudioError};
 use crate::sessions::SessionManager;
@@ -36,6 +36,12 @@ pub enum TargetProcess {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureMode {
+    Include,
+    Exclude,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioFormat {
     Pcm16,
     Float32,
@@ -44,10 +50,10 @@ pub enum AudioFormat {
 #[derive(Debug, Clone)]
 pub struct CaptureConfig {
     pub target: TargetProcess,
+    pub mode: CaptureMode,
     pub sample_rate: u32,
     pub channels: u16,
     pub format: AudioFormat,
-    pub include_tree: bool,
     pub silence_padding: bool,
 }
 
@@ -55,10 +61,10 @@ impl Default for CaptureConfig {
     fn default() -> Self {
         Self {
             target: TargetProcess::ByPid(0),
+            mode: CaptureMode::Include,
             sample_rate: 48000,
             channels: 2,
             format: AudioFormat::Pcm16,
-            include_tree: true,
             silence_padding: true,
         }
     }
@@ -97,6 +103,16 @@ impl CaptureBuilder {
         }
     }
 
+    pub fn mode(mut self, mode: CaptureMode) -> Self {
+        self.config.mode = mode;
+        self
+    }
+
+    pub fn exclude(mut self) -> Self {
+        self.config.mode = CaptureMode::Exclude;
+        self
+    }
+
     pub fn sample_rate(mut self, rate: u32) -> Self {
         self.config.sample_rate = rate;
         self
@@ -109,11 +125,6 @@ impl CaptureBuilder {
 
     pub fn format(mut self, format: AudioFormat) -> Self {
         self.config.format = format;
-        self
-    }
-
-    pub fn include_tree(mut self, include: bool) -> Self {
-        self.config.include_tree = include;
         self
     }
 
@@ -138,6 +149,10 @@ pub struct AudioCapture {
 impl AudioCapture {
     pub fn builder(target: TargetProcess) -> CaptureBuilder {
         CaptureBuilder::new(target)
+    }
+
+    pub fn exclude(target: TargetProcess) -> CaptureBuilder {
+        CaptureBuilder::new(target).mode(CaptureMode::Exclude)
     }
 
     pub fn receiver(&self) -> &Receiver<AudioFrame> {
@@ -278,7 +293,12 @@ fn capture_worker_loop(
         OpenProcess(PROCESS_SYNCHRONIZE, false, target_pid).ok()
     };
 
-    let audio_client = activate_process_loopback_client(target_pid, config.include_tree)?;
+    let loopback_mode = match config.mode {
+        CaptureMode::Include => ProcessLoopbackMode::IncludeTargetProcessTree,
+        CaptureMode::Exclude => ProcessLoopbackMode::ExcludeTargetProcessTree,
+    };
+
+    let audio_client = activate_process_loopback_client(target_pid, loopback_mode)?;
 
     // Get system mix format from default render device
     let sys_format = get_system_mix_format().unwrap_or_else(|_| {
@@ -324,19 +344,19 @@ fn capture_worker_loop(
         let src_channels = sys_format.Format.nChannels as usize;
 
         while !stop_signal.load(Ordering::Relaxed) {
-            // Check if target process has exited
-            if let Some(h_proc) = process_handle {
-                let wait_proc = WaitForSingleObject(h_proc, 0);
-                if wait_proc.0 == 0 {
-                    // Process terminated: exit loop
-                    break;
+            // Check if target process has exited (in INCLUDE mode, exit if target terminates)
+            if config.mode == CaptureMode::Include {
+                if let Some(h_proc) = process_handle {
+                    let wait_proc = WaitForSingleObject(h_proc, 0);
+                    if wait_proc.0 == 0 {
+                        break;
+                    }
                 }
             }
 
             // Wait for audio event with 50ms timeout
             let wait_res = WaitForSingleObject(event, 50);
             if wait_res.0 != 0 && wait_res.0 != 0x102 {
-                // Not signaled and not timeout
                 continue;
             }
 

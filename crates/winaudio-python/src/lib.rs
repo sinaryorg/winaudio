@@ -126,11 +126,12 @@ pub struct PyCapture {
 #[pymethods]
 impl PyCapture {
     #[new]
-    #[pyo3(signature = (pid=None, name=None, window=None, sample_rate=48000, channels=2))]
+    #[pyo3(signature = (pid=None, name=None, window=None, exclude=false, sample_rate=48000, channels=2))]
     pub fn new(
         pid: Option<u32>,
         name: Option<String>,
         window: Option<String>,
+        exclude: bool,
         sample_rate: u32,
         channels: u16,
     ) -> PyResult<Self> {
@@ -146,7 +147,14 @@ impl PyCapture {
             ));
         };
 
+        let mode = if exclude {
+            winaudio_core::CaptureMode::Exclude
+        } else {
+            winaudio_core::CaptureMode::Include
+        };
+
         let cap = CoreCapture::builder(target)
+            .mode(mode)
             .sample_rate(sample_rate)
             .channels(channels)
             .format(AudioFormat::Pcm16)

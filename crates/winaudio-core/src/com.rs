@@ -118,10 +118,11 @@ impl Drop for AutoHandle {
     }
 }
 
-/// Asynchronously activates an `IAudioClient` configured for process-specific loopback capture.
+/// Asynchronously activates an `IAudioClient` configured for process-specific loopback capture
+/// in either INCLUDE or EXCLUDE mode.
 pub fn activate_process_loopback_client(
     target_pid: u32,
-    include_tree: bool,
+    mode: ProcessLoopbackMode,
 ) -> Result<IAudioClient> {
     ensure_mta()?;
 
@@ -140,11 +141,7 @@ pub fn activate_process_loopback_client(
             activation_type: AudioClientActivationType::ProcessLoopback,
             process_loopback_params: AudioClientProcessLoopbackParams {
                 target_process_id: target_pid,
-                process_loopback_mode: if include_tree {
-                    ProcessLoopbackMode::IncludeTargetProcessTree
-                } else {
-                    ProcessLoopbackMode::ExcludeTargetProcessTree
-                },
+                process_loopback_mode: mode,
             },
         };
 
