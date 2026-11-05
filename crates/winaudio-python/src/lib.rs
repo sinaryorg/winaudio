@@ -33,6 +33,11 @@ pub struct PyAudioSession {
 
 #[pymethods]
 impl PyAudioSession {
+    #[getter]
+    pub fn host_app_name(&self) -> Option<String> {
+        self.host_name.clone()
+    }
+
     pub fn set_volume(&self, volume: f32) -> PyResult<()> {
         if self.pid == 0 {
             return Err(PyValueError::new_err("Cannot adjust volume of system session directly"));
