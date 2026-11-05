@@ -191,13 +191,18 @@ impl AudioCapture {
         }
     }
 
+    pub fn stop_signal(&self) -> &Arc<AtomicBool> {
+        &self.stop_signal
+    }
+
     /// Records audio to a standard WAV file for a given duration with an optional progress callback.
+    /// If duration is None, records continuously until stop_signal is set.
     pub fn record_to_wav_with_progress<F>(
         &self,
         path: &str,
-        duration: Duration,
+        duration: Option<Duration>,
         mut on_progress_secs: F,
-    ) -> Result<()>
+    ) -> Result<Duration>
     where
         F: FnMut(u64),
     {
@@ -212,7 +217,12 @@ impl AudioCapture {
         let start = Instant::now();
         let mut last_sec = 0;
 
-        while start.elapsed() < duration {
+        while !self.stop_signal.load(Ordering::Relaxed) {
+            if let Some(dur) = duration {
+                if start.elapsed() >= dur {
+                    break;
+                }
+            }
             if let Ok(frame) = self.receiver.recv_timeout(Duration::from_millis(50)) {
                 for &sample in &frame.samples_i16 {
                     writer.write_sample(sample)?;
@@ -226,12 +236,18 @@ impl AudioCapture {
         }
 
         writer.finalize()?;
-        Ok(())
+        Ok(start.elapsed())
     }
 
     /// Records audio to a standard WAV file for a given duration.
     pub fn record_to_wav(&self, path: &str, duration: Duration) -> Result<()> {
-        self.record_to_wav_with_progress(path, duration, |_| {})
+        self.record_to_wav_with_progress(path, Some(duration), |_| {})?;
+        Ok(())
+    }
+
+    /// Records audio indefinitely until stop() or stop_signal is triggered.
+    pub fn record_to_wav_indefinite(&self, path: &str) -> Result<Duration> {
+        self.record_to_wav_with_progress(path, None, |_| {})
     }
 
     fn resolve_target_pid(target: &TargetProcess) -> Result<Option<u32>> {

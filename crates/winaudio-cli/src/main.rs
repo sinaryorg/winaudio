@@ -10,6 +10,27 @@ use winaudio_core::{
     SessionState, TargetProcess,
 };
 
+#[allow(clippy::upper_case_acronyms)]
+type BOOL = i32;
+
+static STOP_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> BOOL {
+    if ctrl_type == 0 || ctrl_type == 1 {
+        STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+        1
+    } else {
+        0
+    }
+}
+
+extern "system" {
+    fn SetConsoleCtrlHandler(
+        handler: Option<unsafe extern "system" fn(u32) -> BOOL>,
+        add: BOOL,
+    ) -> BOOL;
+}
+
 #[derive(Parser)]
 #[command(
     name = "winaudio",
@@ -92,9 +113,9 @@ enum Commands {
         #[arg(short, long, default_value = "recorded_audio.wav")]
         out: PathBuf,
 
-        /// Recording duration in seconds
-        #[arg(short, long, default_value = "5")]
-        duration: u64,
+        /// Recording duration in seconds (optional: omit to record indefinitely until Ctrl+C)
+        #[arg(short, long)]
+        duration: Option<u64>,
 
         /// Target sample rate in Hz (e.g. 16000 for Whisper/speech, 48000 for high-fidelity)
         #[arg(short, long, default_value = "48000")]
@@ -456,7 +477,7 @@ fn cmd_record(
     window: Option<String>,
     exclude: Option<String>,
     out: PathBuf,
-    duration_secs: u64,
+    duration_secs: Option<u64>,
     sample_rate: u32,
     channels: u16,
 ) -> Result<()> {
@@ -518,26 +539,31 @@ fn cmd_record(
         .start()
         .context("Failed to start audio capture engine")?;
 
+    let dur_display = match duration_secs {
+        Some(s) if s > 0 => format!("for {} seconds [Ctrl+C to stop early]", s),
+        _ => "indefinitely [Press Ctrl+C to stop recording]".to_string(),
+    };
+
     match target {
         TargetProcess::All => {
             println!(
-                "{} Capturing ALL system audio [Master Endpoint Loopback] ({} Hz, {}) for {} seconds...",
+                "{} Capturing ALL system audio [Master Endpoint Loopback] ({} Hz, {}) {}...",
                 "▶".green().bold(),
                 sample_rate,
                 if channels == 1 { "mono" } else { "stereo" },
-                duration_secs
+                dur_display
             );
         }
         TargetProcess::Multiple(_) => {
             let pids = capture.resolved_pids();
             println!(
-                "{} Capturing & MIXING {} audio streams [{:?}] ({} Hz, {}) for {} seconds...",
+                "{} Capturing & MIXING {} audio streams [{:?}] ({} Hz, {}) {}...",
                 "▶".cyan().bold(),
                 pids.len(),
                 pids,
                 sample_rate,
                 if channels == 1 { "mono" } else { "stereo" },
-                duration_secs
+                dur_display
             );
         }
         _ => {
@@ -550,53 +576,103 @@ fn cmd_record(
 
             if mode == winaudio_core::CaptureMode::Exclude {
                 println!(
-                    "{} Capturing all system audio EXCLUDING PID {} [{}] ({} Hz, {}) for {} seconds...",
+                    "{} Capturing all system audio EXCLUDING PID {} [{}] ({} Hz, {}) {}...",
                     "▶".yellow().bold(),
                     resolved_pid.to_string().yellow(),
                     app_info.cyan(),
                     sample_rate,
                     if channels == 1 { "mono" } else { "stereo" },
-                    duration_secs
+                    dur_display
                 );
             } else {
                 println!(
-                    "{} Capturing audio from PID {} [{}] ({} Hz, {}) for {} seconds...",
+                    "{} Capturing audio from PID {} [{}] ({} Hz, {}) {}...",
                     "▶".green().bold(),
                     resolved_pid.to_string().yellow(),
                     app_info.cyan(),
                     sample_rate,
                     if channels == 1 { "mono" } else { "stereo" },
-                    duration_secs
+                    dur_display
                 );
             }
         }
     }
 
-    let pb = ProgressBar::new(duration_secs);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template(
-                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len}s ({msg})",
-            )
-            .unwrap()
-            .progress_chars("#>-"),
-    );
+    // Set Windows console Ctrl+C handler
+    unsafe {
+        SetConsoleCtrlHandler(Some(console_ctrl_handler), 1);
+    }
+
+    let pb = match duration_secs {
+        Some(s) if s > 0 => {
+            let p = ProgressBar::new(s);
+            p.set_style(
+                ProgressStyle::default_bar()
+                    .template(
+                        "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len}s ({msg})",
+                    )
+                    .unwrap()
+                    .progress_chars("#>-"),
+            );
+            p.set_message("Recording... Ctrl+C to finish");
+            p
+        }
+        _ => {
+            let p = ProgressBar::new_spinner();
+            p.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} [{elapsed_precise}] {msg}")
+                    .unwrap(),
+            );
+            p.set_message("Recording live... Press Ctrl+C to stop");
+            p
+        }
+    };
 
     let out_str = out.display().to_string();
-    let duration = Duration::from_secs(duration_secs);
+    let target_duration = duration_secs.filter(|&s| s > 0).map(Duration::from_secs);
 
+    let stop_signal = capture.stop_signal().clone();
     let pb_clone = pb.clone();
-    capture
-        .record_to_wav_with_progress(&out_str, duration, move |sec| {
-            pb_clone.set_position(sec);
+    let actual_dur = capture
+        .record_to_wav_with_progress(&out_str, target_duration, move |sec| {
+            if STOP_REQUESTED.load(std::sync::atomic::Ordering::Relaxed) {
+                stop_signal.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            if let Some(target_sec) = duration_secs {
+                if target_sec > 0 {
+                    pb_clone.set_position(sec);
+                } else {
+                    pb_clone
+                        .set_message(format!("Recording live ({}s)... Press Ctrl+C to stop", sec));
+                    pb_clone.tick();
+                }
+            } else {
+                pb_clone.set_message(format!("Recording live ({}s)... Press Ctrl+C to stop", sec));
+                pb_clone.tick();
+            }
         })
         .context("Recording to WAV failed")?;
 
     pb.finish_with_message("Complete");
+
+    let total_secs = actual_dur.as_secs();
+    let hours = total_secs / 3600;
+    let mins = (total_secs % 3600) / 60;
+    let secs = total_secs % 60;
+    let time_str = if hours > 0 {
+        format!("{}h {}m {}s", hours, mins, secs)
+    } else if mins > 0 {
+        format!("{}m {}s", mins, secs)
+    } else {
+        format!("{}s", secs)
+    };
+
     println!(
-        "\n{} Successfully saved audio to: {}",
+        "\n{} Successfully saved audio to: {} (Duration: {})",
         "✔".green().bold(),
-        out_str.bright_cyan().underline()
+        out_str.bright_cyan().underline(),
+        time_str.yellow().bold()
     );
 
     Ok(())
