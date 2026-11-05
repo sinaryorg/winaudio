@@ -1,0 +1,15 @@
+[package]
+name = "winaudio-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Python bindings for WinAudio"
+
+[lib]
+name = "winaudio"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+winaudio-core = { path = "../winaudio-core" }
+pyo3 = { version = "0.22", features = ["extension-module"] }
+crossbeam-channel = "0.5"

@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  check-and-test:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: clippy, rustfmt
+
+      - name: Rustfmt Check
+        run: cargo fmt --check --all
+
+      - name: Clippy Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run Tests (x86_64)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: cargo test --workspace
+
+      - name: Build Release
+        run: cargo build --workspace --release --target ${{ matrix.target }}
