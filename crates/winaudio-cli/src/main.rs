@@ -62,11 +62,15 @@ enum Commands {
 
     /// Record audio from a specific application without capturing system or microphone sound
     Record {
-        /// Target process ID
+        /// Record ALL system audio sources (Master Endpoint Loopback)
         #[arg(short, long)]
-        pid: Option<u32>,
+        all: bool,
 
-        /// Target process executable name (e.g., spotify.exe, chrome.exe)
+        /// Target process ID (can be comma-separated for multiple: e.g. 1234,5678)
+        #[arg(short, long)]
+        pid: Option<String>,
+
+        /// Target application name (can be comma-separated for multiple: e.g. "game.exe,discord.exe")
         #[arg(short, long)]
         name: Option<String>,
 
@@ -74,7 +78,7 @@ enum Commands {
         #[arg(short, long)]
         window: Option<String>,
 
-        /// Process to EXCLUDE (captures all system audio EXCEPT this application)
+        /// Application(s) to EXCLUDE (can be comma-separated: e.g. "spotify.exe,discord.exe")
         #[arg(short, long)]
         exclude: Option<String>,
 
@@ -104,6 +108,7 @@ fn main() -> Result<()> {
         Commands::Volume { pid, name, set } => cmd_volume(pid, name, set),
         Commands::Mute { pid, name, unmute } => cmd_mute(pid, name, unmute),
         Commands::Record {
+            all,
             pid,
             name,
             window,
@@ -113,6 +118,7 @@ fn main() -> Result<()> {
             sample_rate,
             channels,
         } => cmd_record(
+            all,
             pid,
             name,
             window,
@@ -265,7 +271,8 @@ fn cmd_mute(pid: Option<u32>, name: Option<String>, unmute: bool) -> Result<()> 
 }
 
 fn cmd_record(
-    pid: Option<u32>,
+    all: bool,
+    pid_str: Option<String>,
     name: Option<String>,
     window: Option<String>,
     exclude: Option<String>,
@@ -274,58 +281,111 @@ fn cmd_record(
     sample_rate: u32,
     channels: u16,
 ) -> Result<()> {
-    let (target, mode) = if let Some(ex) = exclude {
-        (TargetProcess::ByName(ex), winaudio_core::CaptureMode::Exclude)
-    } else if let Some(p) = pid {
-        (TargetProcess::ByPid(p), winaudio_core::CaptureMode::Include)
+    let (target, mode) = if all || (pid_str.is_none() && name.is_none() && window.is_none() && exclude.is_none()) {
+        (TargetProcess::All, winaudio_core::CaptureMode::Include)
+    } else if let Some(ex) = exclude {
+        let ex_list: Vec<String> = ex
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        SessionManager::resolve_multi_exclude(&ex_list)?
     } else if let Some(n) = name {
-        (TargetProcess::ByName(n), winaudio_core::CaptureMode::Include)
+        let name_list: Vec<String> = n
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        (
+            SessionManager::resolve_multi_include(&name_list)?,
+            winaudio_core::CaptureMode::Include,
+        )
+    } else if let Some(p) = pid_str {
+        let pid_list: Vec<u32> = p
+            .split(',')
+            .filter_map(|s| s.trim().parse::<u32>().ok())
+            .collect();
+        if pid_list.len() > 1 {
+            (
+                TargetProcess::Multiple(pid_list.into_iter().map(TargetProcess::ByPid).collect()),
+                winaudio_core::CaptureMode::Include,
+            )
+        } else if let Some(&single_pid) = pid_list.first() {
+            (TargetProcess::ByPid(single_pid), winaudio_core::CaptureMode::Include)
+        } else {
+            bail!("Invalid PID provided: {}", p);
+        }
     } else if let Some(w) = window {
         (TargetProcess::ByWindowTitle(w), winaudio_core::CaptureMode::Include)
     } else {
-        bail!("You must specify --name <NAME>, --pid <PID>, --window <TITLE>, or --exclude <NAME>");
+        (TargetProcess::All, winaudio_core::CaptureMode::Include)
     };
 
     println!(
-        "{} Initializing process loopback audio capture...",
+        "{} Initializing audio capture engine...",
         "●".cyan()
     );
 
-    let capture = AudioCapture::builder(target)
+    let capture = AudioCapture::builder(target.clone())
         .mode(mode)
         .sample_rate(sample_rate)
         .channels(channels)
         .format(AudioFormat::Pcm16)
         .start()
-        .context("Failed to start process loopback audio capture")?;
+        .context("Failed to start audio capture engine")?;
 
-    let resolved_pid = capture.target_pid();
-    let app_info = SessionManager::find_by_pid(resolved_pid)
-        .ok()
-        .flatten()
-        .map(|s| s.display_name)
-        .unwrap_or_else(|| format!("PID {}", resolved_pid));
+    match target {
+        TargetProcess::All => {
+            println!(
+                "{} Capturing ALL system audio [Master Endpoint Loopback] ({} Hz, {}) for {} seconds...",
+                "▶".green().bold(),
+                sample_rate,
+                if channels == 1 { "mono" } else { "stereo" },
+                duration_secs
+            );
+        }
+        TargetProcess::Multiple(_) => {
+            let pids = capture.resolved_pids();
+            println!(
+                "{} Capturing & MIXING {} audio streams [{:?}] ({} Hz, {}) for {} seconds...",
+                "▶".cyan().bold(),
+                pids.len(),
+                pids,
+                sample_rate,
+                if channels == 1 { "mono" } else { "stereo" },
+                duration_secs
+            );
+        }
+        _ => {
+            let resolved_pid = capture.target_pid();
+            let app_info = SessionManager::find_by_pid(resolved_pid)
+                .ok()
+                .flatten()
+                .map(|s| s.display_name)
+                .unwrap_or_else(|| format!("PID {}", resolved_pid));
 
-    if mode == winaudio_core::CaptureMode::Exclude {
-        println!(
-            "{} Capturing all system audio EXCLUDING PID {} [{}] ({} Hz, {}) for {} seconds...",
-            "▶".yellow().bold(),
-            resolved_pid.to_string().yellow(),
-            app_info.cyan(),
-            sample_rate,
-            if channels == 1 { "mono" } else { "stereo" },
-            duration_secs
-        );
-    } else {
-        println!(
-            "{} Capturing audio from PID {} [{}] ({} Hz, {}) for {} seconds...",
-            "▶".green().bold(),
-            resolved_pid.to_string().yellow(),
-            app_info.cyan(),
-            sample_rate,
-            if channels == 1 { "mono" } else { "stereo" },
-            duration_secs
-        );
+            if mode == winaudio_core::CaptureMode::Exclude {
+                println!(
+                    "{} Capturing all system audio EXCLUDING PID {} [{}] ({} Hz, {}) for {} seconds...",
+                    "▶".yellow().bold(),
+                    resolved_pid.to_string().yellow(),
+                    app_info.cyan(),
+                    sample_rate,
+                    if channels == 1 { "mono" } else { "stereo" },
+                    duration_secs
+                );
+            } else {
+                println!(
+                    "{} Capturing audio from PID {} [{}] ({} Hz, {}) for {} seconds...",
+                    "▶".green().bold(),
+                    resolved_pid.to_string().yellow(),
+                    app_info.cyan(),
+                    sample_rate,
+                    if channels == 1 { "mono" } else { "stereo" },
+                    duration_secs
+                );
+            }
+        }
     }
 
     let pb = ProgressBar::new(duration_secs);
@@ -339,8 +399,11 @@ fn cmd_record(
     let out_str = out.display().to_string();
     let duration = Duration::from_secs(duration_secs);
 
+    let pb_clone = pb.clone();
     capture
-        .record_to_wav(&out_str, duration)
+        .record_to_wav_with_progress(&out_str, duration, move |sec| {
+            pb_clone.set_position(sec);
+        })
         .context("Recording to WAV failed")?;
 
     pb.finish_with_message("Complete");

@@ -30,9 +30,11 @@ extern "system" {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetProcess {
+    All,
     ByPid(u32),
     ByName(String),
     ByWindowTitle(String),
+    Multiple(Vec<TargetProcess>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +62,7 @@ pub struct CaptureConfig {
 impl Default for CaptureConfig {
     fn default() -> Self {
         Self {
-            target: TargetProcess::ByPid(0),
+            target: TargetProcess::All,
             mode: CaptureMode::Include,
             sample_rate: 48000,
             channels: 2,
@@ -103,6 +105,10 @@ impl CaptureBuilder {
         }
     }
 
+    pub fn all() -> Self {
+        Self::new(TargetProcess::All)
+    }
+
     pub fn mode(mut self, mode: CaptureMode) -> Self {
         self.config.mode = mode;
         self
@@ -143,12 +149,17 @@ pub struct AudioCapture {
     stop_signal: Arc<AtomicBool>,
     worker_handle: Option<JoinHandle<Result<()>>>,
     target_pid: u32,
+    resolved_pids: Vec<u32>,
     config: CaptureConfig,
 }
 
 impl AudioCapture {
     pub fn builder(target: TargetProcess) -> CaptureBuilder {
         CaptureBuilder::new(target)
+    }
+
+    pub fn all() -> CaptureBuilder {
+        CaptureBuilder::all()
     }
 
     pub fn exclude(target: TargetProcess) -> CaptureBuilder {
@@ -163,6 +174,10 @@ impl AudioCapture {
         self.target_pid
     }
 
+    pub fn resolved_pids(&self) -> &[u32] {
+        &self.resolved_pids
+    }
+
     pub fn config(&self) -> &CaptureConfig {
         &self.config
     }
@@ -174,8 +189,11 @@ impl AudioCapture {
         }
     }
 
-    /// Records audio to a standard WAV file for a given duration.
-    pub fn record_to_wav(&self, path: &str, duration: Duration) -> Result<()> {
+    /// Records audio to a standard WAV file for a given duration with an optional progress callback.
+    pub fn record_to_wav_with_progress<F>(&self, path: &str, duration: Duration, mut on_progress_secs: F) -> Result<()>
+    where
+        F: FnMut(u64),
+    {
         let spec = hound::WavSpec {
             channels: self.config.channels,
             sample_rate: self.config.sample_rate,
@@ -185,12 +203,18 @@ impl AudioCapture {
 
         let mut writer = hound::WavWriter::create(path, spec)?;
         let start = Instant::now();
+        let mut last_sec = 0;
 
         while start.elapsed() < duration {
-            if let Ok(frame) = self.receiver.recv_timeout(Duration::from_millis(100)) {
+            if let Ok(frame) = self.receiver.recv_timeout(Duration::from_millis(50)) {
                 for &sample in &frame.samples_i16 {
                     writer.write_sample(sample)?;
                 }
+            }
+            let elapsed_secs = start.elapsed().as_secs();
+            if elapsed_secs != last_sec {
+                on_progress_secs(elapsed_secs);
+                last_sec = elapsed_secs;
             }
         }
 
@@ -198,13 +222,19 @@ impl AudioCapture {
         Ok(())
     }
 
-    fn resolve_target_pid(target: &TargetProcess) -> Result<u32> {
+    /// Records audio to a standard WAV file for a given duration.
+    pub fn record_to_wav(&self, path: &str, duration: Duration) -> Result<()> {
+        self.record_to_wav_with_progress(path, duration, |_| {})
+    }
+
+    fn resolve_target_pid(target: &TargetProcess) -> Result<Option<u32>> {
         match target {
-            TargetProcess::ByPid(pid) => Ok(*pid),
+            TargetProcess::All => Ok(None),
+            TargetProcess::ByPid(pid) => Ok(Some(*pid)),
             TargetProcess::ByName(name) => {
                 let sessions = SessionManager::find_by_name(name)?;
                 if let Some(session) = sessions.into_iter().find(|s| s.pid > 0) {
-                    Ok(session.pid)
+                    Ok(Some(session.pid))
                 } else {
                     Err(WinAudioError::ProcessNotFound(format!(
                         "No active audio session found for name: {}",
@@ -221,7 +251,7 @@ impl AudioCapture {
                         .map(|t| t.to_lowercase().contains(&lower))
                         .unwrap_or(false)
                 }) {
-                    Ok(session.pid)
+                    Ok(Some(session.pid))
                 } else {
                     Err(WinAudioError::ProcessNotFound(format!(
                         "No active audio session found with window title containing: {}",
@@ -229,11 +259,73 @@ impl AudioCapture {
                     )))
                 }
             }
+            TargetProcess::Multiple(_) => Ok(None),
         }
     }
 
-    fn start_with_config(config: CaptureConfig) -> Result<Self> {
-        let target_pid = Self::resolve_target_pid(&config.target)?;
+    pub fn start_with_config(config: CaptureConfig) -> Result<Self> {
+        // Handle Multi-App Capture
+        if let TargetProcess::Multiple(ref targets) = config.target {
+            if targets.is_empty() {
+                return Self::start_with_config(CaptureConfig {
+                    target: TargetProcess::All,
+                    ..config
+                });
+            }
+            if targets.len() == 1 {
+                return Self::start_with_config(CaptureConfig {
+                    target: targets[0].clone(),
+                    ..config
+                });
+            }
+
+            // Spawn individual capture streams
+            let mut captures = Vec::new();
+            let mut resolved_pids = Vec::new();
+            for t in targets {
+                if let Ok(c) = AudioCapture::start_with_config(CaptureConfig {
+                    target: t.clone(),
+                    mode: config.mode,
+                    sample_rate: config.sample_rate,
+                    channels: config.channels,
+                    format: config.format,
+                    silence_padding: config.silence_padding,
+                }) {
+                    resolved_pids.push(c.target_pid());
+                    captures.push(c);
+                }
+            }
+
+            if captures.is_empty() {
+                return Err(WinAudioError::Capture(
+                    "None of the target applications could be captured for mixing".into(),
+                ));
+            }
+
+            let (sender, receiver) = bounded(128);
+            let stop_signal = Arc::new(AtomicBool::new(false));
+            let stop_clone = Arc::clone(&stop_signal);
+
+            let sample_rate = config.sample_rate;
+            let channels = config.channels;
+
+            let worker_handle = thread::spawn(move || {
+                mixer_worker_loop(captures, sender, stop_clone, sample_rate, channels)
+            });
+
+            return Ok(Self {
+                receiver,
+                stop_signal,
+                worker_handle: Some(worker_handle),
+                target_pid: 0,
+                resolved_pids,
+                config,
+            });
+        }
+
+        // Single target or All System Audio
+        let target_pid_opt = Self::resolve_target_pid(&config.target)?;
+        let target_pid = target_pid_opt.unwrap_or(0);
 
         let (sender, receiver) = bounded(128);
         let stop_signal = Arc::new(AtomicBool::new(false));
@@ -242,7 +334,11 @@ impl AudioCapture {
         let config_clone = config.clone();
 
         let worker_handle = thread::spawn(move || {
-            capture_worker_loop(target_pid, config_clone, sender, stop_clone)
+            if let Err(e) = capture_worker_loop(target_pid_opt, config_clone, sender, stop_clone) {
+                eprintln!("[winaudio error] capture worker error: {:?}", e);
+                return Err(e);
+            }
+            Ok(())
         });
 
         Ok(Self {
@@ -250,6 +346,7 @@ impl AudioCapture {
             stop_signal,
             worker_handle: Some(worker_handle),
             target_pid,
+            resolved_pids: if target_pid > 0 { vec![target_pid] } else { Vec::new() },
             config,
         })
     }
@@ -274,8 +371,20 @@ fn get_system_mix_format() -> Result<WAVEFORMATEXTENSIBLE> {
     }
 }
 
+/// Activates master system audio endpoint loopback (captures all sound).
+fn activate_master_loopback_client() -> Result<IAudioClient> {
+    ensure_mta()?;
+    unsafe {
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+        let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia)?;
+        let client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
+        Ok(client)
+    }
+}
+
 fn capture_worker_loop(
-    target_pid: u32,
+    target_pid_opt: Option<u32>,
     config: CaptureConfig,
     sender: Sender<AudioFrame>,
     stop_signal: Arc<AtomicBool>,
@@ -288,17 +397,23 @@ fn capture_worker_loop(
         AvSetMmThreadCharacteristicsW(windows::core::w!("Audio"), &mut task_index)
     };
 
-    // Open target process handle to detect process exit
-    let process_handle = unsafe {
-        OpenProcess(PROCESS_SYNCHRONIZE, false, target_pid).ok()
+    // Open target process handle to detect process exit (only for single PID include mode)
+    let process_handle = if let Some(pid) = target_pid_opt {
+        unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid).ok() }
+    } else {
+        None
     };
 
-    let loopback_mode = match config.mode {
-        CaptureMode::Include => ProcessLoopbackMode::IncludeTargetProcessTree,
-        CaptureMode::Exclude => ProcessLoopbackMode::ExcludeTargetProcessTree,
+    let audio_client = match target_pid_opt {
+        Some(pid) => {
+            let loopback_mode = match config.mode {
+                CaptureMode::Include => ProcessLoopbackMode::IncludeTargetProcessTree,
+                CaptureMode::Exclude => ProcessLoopbackMode::ExcludeTargetProcessTree,
+            };
+            activate_process_loopback_client(pid, loopback_mode)?
+        }
+        None => activate_master_loopback_client()?,
     };
-
-    let audio_client = activate_process_loopback_client(target_pid, loopback_mode)?;
 
     // Get system mix format from default render device
     let sys_format = get_system_mix_format().unwrap_or_else(|_| {
@@ -317,34 +432,46 @@ fn capture_worker_loop(
     });
 
     let format_ptr = &sys_format.Format as *const WAVEFORMATEX;
-    let stream_flags = AUDCLNT_STREAMFLAGS_LOOPBACK
-        | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
-        | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM;
+    let is_master_loopback = target_pid_opt.is_none();
+    let stream_flags = if is_master_loopback {
+        AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
+    } else {
+        AUDCLNT_STREAMFLAGS_LOOPBACK
+            | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
+            | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
+    };
 
     // Buffer duration: 100 milliseconds in 100ns units = 1,000,000
     let buffer_duration = 1_000_000;
 
     unsafe {
-        audio_client.Initialize(
+        let init_res = audio_client.Initialize(
             AUDCLNT_SHAREMODE_SHARED,
             stream_flags,
             buffer_duration,
             0,
             format_ptr,
             None,
-        )?;
+        );
+        init_res?;
 
-        let event = CreateEventW(None, false, false, None)?;
-        audio_client.SetEventHandle(event)?;
+        let event = if !is_master_loopback {
+            let ev = CreateEventW(None, false, false, None)?;
+            audio_client.SetEventHandle(ev)?;
+            Some(ev)
+        } else {
+            None
+        };
 
         let capture_client: IAudioCaptureClient = audio_client.GetService()?;
-        audio_client.Start()?;
+        let start_res = audio_client.Start();
+        start_res?;
 
         let src_sample_rate = sys_format.Format.nSamplesPerSec;
         let src_channels = sys_format.Format.nChannels as usize;
 
         while !stop_signal.load(Ordering::Relaxed) {
-            // Check if target process has exited (in INCLUDE mode, exit if target terminates)
+            // Check if target process has exited (in single app INCLUDE mode)
             if config.mode == CaptureMode::Include {
                 if let Some(h_proc) = process_handle {
                     let wait_proc = WaitForSingleObject(h_proc, 0);
@@ -354,10 +481,15 @@ fn capture_worker_loop(
                 }
             }
 
-            // Wait for audio event with 50ms timeout
-            let wait_res = WaitForSingleObject(event, 50);
-            if wait_res.0 != 0 && wait_res.0 != 0x102 {
-                continue;
+            if let Some(ev) = event {
+                // Wait for audio event with 50ms timeout
+                let wait_res = WaitForSingleObject(ev, 50);
+                if wait_res.0 != 0 && wait_res.0 != 0x102 {
+                    continue;
+                }
+            } else {
+                // Master loopback polling mode (sleep 10ms per WASAPI recommendation)
+                thread::sleep(Duration::from_millis(10));
             }
 
             let mut packet_length = capture_client.GetNextPacketSize()?;
@@ -423,7 +555,9 @@ fn capture_worker_loop(
         }
 
         let _ = audio_client.Stop();
-        let _ = CloseHandle(event);
+        if let Some(ev) = event {
+            let _ = CloseHandle(ev);
+        }
 
         if let Some(h_proc) = process_handle {
             let _ = CloseHandle(h_proc);
@@ -432,6 +566,66 @@ fn capture_worker_loop(
         if !avrt_handle.is_invalid() {
             let _ = AvRevertMmThreadCharacteristics(avrt_handle);
         }
+    }
+
+    Ok(())
+}
+
+/// Software Audio Mixer thread: pulls audio frames from multiple active streams,
+/// sums and soft-clamps the samples in real-time, and yields unified frames.
+fn mixer_worker_loop(
+    mut captures: Vec<AudioCapture>,
+    sender: Sender<AudioFrame>,
+    stop_signal: Arc<AtomicBool>,
+    sample_rate: u32,
+    channels: u16,
+) -> Result<()> {
+    while !stop_signal.load(Ordering::Relaxed) {
+        let mut active_frames = Vec::new();
+
+        for cap in &mut captures {
+            if let Ok(frame) = cap.receiver().recv_timeout(Duration::from_millis(30)) {
+                active_frames.push(frame);
+            }
+        }
+
+        if active_frames.is_empty() {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
+        let max_samples = active_frames
+            .iter()
+            .map(|f| f.samples_f32.len())
+            .max()
+            .unwrap_or(0);
+
+        let mut mixed = vec![0.0f32; max_samples];
+        for f in &active_frames {
+            for (i, &s) in f.samples_f32.iter().enumerate() {
+                mixed[i] += s;
+            }
+        }
+
+        // Soft-clamp with protection against audio clipping
+        for s in &mut mixed {
+            *s = s.clamp(-1.0, 1.0);
+        }
+
+        let pcm16 = f32_to_pcm16(&mixed);
+        let out_frame = AudioFrame {
+            samples_f32: mixed,
+            samples_i16: pcm16,
+            channels,
+            sample_rate,
+        };
+
+        let _ = sender.try_send(out_frame);
+    }
+
+    // Stop all sub-captures
+    for cap in &mut captures {
+        cap.stop();
     }
 
     Ok(())

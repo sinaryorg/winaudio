@@ -374,6 +374,97 @@ impl SessionManager {
         let sessions = Self::list_sessions()?;
         Ok(sessions.into_iter().find(|s| s.pid == pid))
     }
+
+    /// Resolves multi-target inputs (comma-separated or list of queries) into a TargetProcess.
+    pub fn resolve_multi_include(names: &[String]) -> Result<crate::capture::TargetProcess> {
+        if names.is_empty() {
+            return Ok(crate::capture::TargetProcess::All);
+        }
+        if names.len() == 1 {
+            return Ok(crate::capture::TargetProcess::ByName(names[0].clone()));
+        }
+        let targets = names
+            .iter()
+            .map(|n| crate::capture::TargetProcess::ByName(n.clone()))
+            .collect();
+        Ok(crate::capture::TargetProcess::Multiple(targets))
+    }
+
+    /// Resolves multiple exclusions.
+    /// If 1 app is excluded: returns (TargetProcess::ByName(app), CaptureMode::Exclude)
+    /// If multiple apps are excluded: computes Active Sessions - Excluded Apps and returns Multi-Include on remaining!
+    pub fn resolve_multi_exclude(
+        excluded_names: &[String],
+    ) -> Result<(crate::capture::TargetProcess, crate::capture::CaptureMode)> {
+        if excluded_names.is_empty() {
+            return Ok((
+                crate::capture::TargetProcess::All,
+                crate::capture::CaptureMode::Include,
+            ));
+        }
+        if excluded_names.len() == 1 {
+            return Ok((
+                crate::capture::TargetProcess::ByName(excluded_names[0].clone()),
+                crate::capture::CaptureMode::Exclude,
+            ));
+        }
+
+        // Multiple exclusions: Invert against currently active audio sessions
+        let active_sessions = Self::list_sessions()?
+            .into_iter()
+            .filter(|s| s.state == SessionState::Active && s.pid > 0)
+            .collect::<Vec<_>>();
+
+        let mut remaining_pids = Vec::new();
+        for s in active_sessions {
+            let is_excluded = excluded_names.iter().any(|ex| {
+                if let Ok(pid_val) = ex.trim().parse::<u32>() {
+                    if s.pid == pid_val {
+                        return true;
+                    }
+                }
+                let clean_ex = ex
+                    .trim()
+                    .strip_suffix(".exe")
+                    .unwrap_or(ex.trim())
+                    .to_lowercase();
+                s.process_name.to_lowercase().contains(&clean_ex)
+                    || s.display_name.to_lowercase().contains(&clean_ex)
+                    || s.host_app_name
+                        .as_ref()
+                        .map(|h| h.to_lowercase().contains(&clean_ex))
+                        .unwrap_or(false)
+                    || s.window_title
+                        .as_ref()
+                        .map(|w| w.to_lowercase().contains(&clean_ex))
+                        .unwrap_or(false)
+            });
+
+            if !is_excluded {
+                remaining_pids.push(s.pid);
+            }
+        }
+
+        if remaining_pids.is_empty() {
+            return Err(WinAudioError::ProcessNotFound(
+                "No remaining active audio sessions found after applying multiple exclusions".into(),
+            ));
+        }
+
+        if remaining_pids.len() == 1 {
+            Ok((
+                crate::capture::TargetProcess::ByPid(remaining_pids[0]),
+                crate::capture::CaptureMode::Include,
+            ))
+        } else {
+            Ok((
+                crate::capture::TargetProcess::Multiple(
+                    remaining_pids.into_iter().map(crate::capture::TargetProcess::ByPid).collect(),
+                ),
+                crate::capture::CaptureMode::Include,
+            ))
+        }
+    }
 }
 
 /// Helper function to retrieve the executable name for a given PID.

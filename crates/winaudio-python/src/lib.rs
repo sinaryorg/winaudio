@@ -126,31 +126,43 @@ pub struct PyCapture {
 #[pymethods]
 impl PyCapture {
     #[new]
-    #[pyo3(signature = (pid=None, name=None, window=None, exclude=false, sample_rate=48000, channels=2))]
+    #[pyo3(signature = (all=false, pid=None, name=None, window=None, exclude=None, sample_rate=48000, channels=2))]
     pub fn new(
+        all: bool,
         pid: Option<u32>,
         name: Option<String>,
         window: Option<String>,
-        exclude: bool,
+        exclude: Option<String>,
         sample_rate: u32,
         channels: u16,
     ) -> PyResult<Self> {
-        let target = if let Some(p) = pid {
-            TargetProcess::ByPid(p)
+        let (target, mode) = if all || (pid.is_none() && name.is_none() && window.is_none() && exclude.is_none()) {
+            (TargetProcess::All, winaudio_core::CaptureMode::Include)
+        } else if let Some(ex) = exclude {
+            let ex_list: Vec<String> = ex
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            SessionManager::resolve_multi_exclude(&ex_list)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
         } else if let Some(n) = name {
-            TargetProcess::ByName(n)
+            let name_list: Vec<String> = n
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            (
+                SessionManager::resolve_multi_include(&name_list)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
+                winaudio_core::CaptureMode::Include,
+            )
+        } else if let Some(p) = pid {
+            (TargetProcess::ByPid(p), winaudio_core::CaptureMode::Include)
         } else if let Some(w) = window {
-            TargetProcess::ByWindowTitle(w)
+            (TargetProcess::ByWindowTitle(w), winaudio_core::CaptureMode::Include)
         } else {
-            return Err(PyValueError::new_err(
-                "Must specify at least one of: pid, name, or window",
-            ));
-        };
-
-        let mode = if exclude {
-            winaudio_core::CaptureMode::Exclude
-        } else {
-            winaudio_core::CaptureMode::Include
+            (TargetProcess::All, winaudio_core::CaptureMode::Include)
         };
 
         let cap = CoreCapture::builder(target)
