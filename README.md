@@ -184,27 +184,31 @@ for session in winaudio.list_sessions():
 winaudio.set_volume_by_name("spotify.exe", 0.5)
 winaudio.set_mute_by_name("zoom.exe", True)
 
-# 3. Capture a single application
+# 3. Capture a single application (e.g. 10s, 1 hour = 3600s, 2 hours = 7200s)
 with winaudio.Capture(name="Riff", sample_rate=48000, channels=2) as cap:
     print(f"Capturing from PID {cap.target_pid}...")
-    cap.record_to_wav("riff_audio.wav", duration_seconds=5.0)
+    cap.record_to_wav("riff_audio.wav", duration_seconds=10.0)
 
-# 4. Master Loopback: Capture ALL system audio
+# 4. Continuous recording without time limits (runs continuously until Ctrl+C or cap.stop())
+with winaudio.Capture(name="Discord") as cap:
+    cap.record_to_wav("meeting_call.wav")  # Omit duration_seconds for unlimited live recording
+
+# 5. Master Loopback: Capture ALL system audio
 with winaudio.Capture(all=True) as cap:
     cap.record_to_wav("all_pc_sound.wav", duration_seconds=10.0)
 
-# 5. Multi-App Mixing: Mix multiple apps
+# 6. Multi-App Mixing: Mix multiple apps together
 with winaudio.Capture(name="Riff,chrome") as cap:
     cap.record_to_wav("mixed.wav", duration_seconds=10.0)
 
-# 6. Exclude Mode: Capture all except specific apps
+# 7. Exclude Mode: Capture all except specific apps
 with winaudio.Capture(exclude="Riff,steam") as cap:
     cap.record_to_wav("clean_stream.wav", duration_seconds=10.0)
 
-# 7. Real-time frame streaming (for AI / real-time processing)
+# 8. Real-time frame streaming (for AI / Whisper speech-to-text)
 with winaudio.Capture(name="chrome.exe", sample_rate=16000, channels=1) as cap:
     for _ in range(50):
-        # Reads raw 16-bit PCM bytes
+        # Reads raw 16-bit PCM bytes continuously
         chunk = cap.read_frame(timeout_ms=100)
         if chunk:
             print(f"Received audio frame: {len(chunk)} bytes")
@@ -238,8 +242,11 @@ fn main() -> anyhow::Result<()> {
         .channels(2)
         .start()?;
 
-    // 3. Record for 5 seconds to WAV
-    capture.record_to_wav("output.wav", Duration::from_secs(5))?;
+    // 3. Record for custom duration (e.g. 10 seconds, 1 hour = 3600s, 2 hours = 7200s)
+    capture.record_to_wav("output.wav", Duration::from_secs(10))?;
+
+    // 4. Continuous recording without time limits (runs live until capture.stop() is called)
+    // capture.record_to_wav_indefinite("long_session.wav")?;
     Ok(())
 }
 ```

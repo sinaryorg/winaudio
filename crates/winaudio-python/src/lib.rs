@@ -195,15 +195,22 @@ impl PyCapture {
         self.pid
     }
 
-    pub fn record_to_wav(&self, path: &str, duration_seconds: f32) -> PyResult<()> {
+    #[pyo3(signature = (path, duration_seconds=None))]
+    pub fn record_to_wav(&self, path: &str, duration_seconds: Option<f32>) -> PyResult<()> {
         let cap = self
             .capture
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("Capture already closed"))?;
 
-        let dur = Duration::from_secs_f32(duration_seconds);
-        cap.record_to_wav(path, dur)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        if let Some(secs) = duration_seconds {
+            let dur = Duration::from_secs_f32(secs);
+            cap.record_to_wav(path, dur)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        } else {
+            cap.record_to_wav_indefinite(path)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        }
+        Ok(())
     }
 
     pub fn read_frame<'py>(
