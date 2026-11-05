@@ -6,8 +6,8 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use winaudio_core::{
-    list_sessions, set_mute_by_name, set_volume_by_name, AudioCapture, AudioFormat,
-    SessionManager, SessionState, TargetProcess,
+    list_sessions, set_mute_by_name, set_volume_by_name, AudioCapture, AudioFormat, SessionManager,
+    SessionState, TargetProcess,
 };
 
 #[derive(Parser)]
@@ -23,6 +23,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::enum_variant_names)]
 enum Commands {
     /// List all active Windows audio sessions and processes
     List {
@@ -138,44 +139,169 @@ fn main() -> Result<()> {
 }
 
 fn cmd_commands() -> Result<()> {
-    println!("\n{}", "🔊 WinAudio — Runnable Commands Cheatsheet".bright_cyan().bold());
+    println!(
+        "\n{}",
+        "🔊 WinAudio — Runnable Commands Cheatsheet"
+            .bright_cyan()
+            .bold()
+    );
     println!("{}", "═".repeat(88).cyan());
 
     println!("\n{}", "1. DISCOVER ACTIVE AUDIO SESSIONS".yellow().bold());
-    println!("  {:<52} {}", "winaudio list".green().bold(), "List active applications playing audio with PID, volume & state".dimmed());
-    println!("  {:<52} {}", "winaudio list --all".green().bold(), "Show all sessions (including inactive/closed apps)".dimmed());
+    println!(
+        "  {:<52} {}",
+        "winaudio list".green().bold(),
+        "List active applications playing audio with PID, volume & state".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio list --all".green().bold(),
+        "Show all sessions (including inactive/closed apps)".dimmed()
+    );
 
-    println!("\n{}", "2. SINGLE APPLICATION AUDIO RECORDING".yellow().bold());
-    println!("  {:<52} {}", "winaudio record --name Riff".green().bold(), "Record audio only from Riff (5s default, out: recorded_audio.wav)".dimmed());
-    println!("  {:<52} {}", "winaudio record --name chrome.exe --duration 10".green().bold(), "Record audio only from Chrome for 10 seconds".dimmed());
-    println!("  {:<52} {}", "winaudio record --pid 15012 --out app.wav".green().bold(), "Record specific process by its PID".dimmed());
-    println!("  {:<52} {}", "winaudio record --window \"YouTube\" --duration 15".green().bold(), "Record application matching window title substring".dimmed());
+    println!(
+        "\n{}",
+        "2. SINGLE APPLICATION AUDIO RECORDING".yellow().bold()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --name Riff".green().bold(),
+        "Record audio only from Riff (5s default, out: recorded_audio.wav)".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --name chrome.exe --duration 10"
+            .green()
+            .bold(),
+        "Record audio only from Chrome for 10 seconds".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --pid 15012 --out app.wav".green().bold(),
+        "Record specific process by its PID".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --window \"YouTube\" --duration 15"
+            .green()
+            .bold(),
+        "Record application matching window title substring".dimmed()
+    );
 
-    println!("\n{}", "3. RECORD ALL AUDIO SOURCES (MASTER SYSTEM LOOPBACK)".yellow().bold());
-    println!("  {:<52} {}", "winaudio record --all --out system_audio.wav".green().bold(), "Record everything playing across your entire PC".dimmed());
-    println!("  {:<52} {}", "winaudio record --all --duration 30 --out all.wav".green().bold(), "Record all PC audio for 30 seconds".dimmed());
+    println!(
+        "\n{}",
+        "3. RECORD ALL AUDIO SOURCES (MASTER SYSTEM LOOPBACK)"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --all --out system_audio.wav"
+            .green()
+            .bold(),
+        "Record everything playing across your entire PC".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --all --duration 30 --out all.wav"
+            .green()
+            .bold(),
+        "Record all PC audio for 30 seconds".dimmed()
+    );
 
-    println!("\n{}", "4. MULTI-APPLICATION MIXING (RECORD MULTIPLE APPS)".yellow().bold());
-    println!("  {:<52} {}", "winaudio record --name \"Riff,chrome\" --out mix.wav".green().bold(), "Mix Riff + Chrome into a single audio file".dimmed());
-    println!("  {:<52} {}", "winaudio record --name \"game.exe,discord.exe\"".green().bold(), "Mix game audio and Discord voice chat".dimmed());
-    println!("  {:<52} {}", "winaudio record --pid 21632,15012 --duration 15".green().bold(), "Mix multiple applications by comma-separated PIDs".dimmed());
+    println!(
+        "\n{}",
+        "4. MULTI-APPLICATION MIXING (RECORD MULTIPLE APPS)"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --name \"Riff,chrome\" --out mix.wav"
+            .green()
+            .bold(),
+        "Mix Riff + Chrome into a single audio file".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --name \"game.exe,discord.exe\""
+            .green()
+            .bold(),
+        "Mix game audio and Discord voice chat".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --pid 21632,15012 --duration 15"
+            .green()
+            .bold(),
+        "Mix multiple applications by comma-separated PIDs".dimmed()
+    );
 
-    println!("\n{}", "5. EXCLUDE AUDIO RECORDING (STREAMER / CLIPPING MODE)".yellow().bold());
-    println!("  {:<52} {}", "winaudio record --exclude spotify.exe".green().bold(), "Record all PC sound EXCEPT Spotify".dimmed());
-    println!("  {:<52} {}", "winaudio record --exclude \"Riff,steam\" --out clean.wav".green().bold(), "Record all PC sound EXCEPT Riff and Steam".dimmed());
+    println!(
+        "\n{}",
+        "5. EXCLUDE AUDIO RECORDING (STREAMER / CLIPPING MODE)"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --exclude spotify.exe".green().bold(),
+        "Record all PC sound EXCEPT Spotify".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --exclude \"Riff,steam\" --out clean.wav"
+            .green()
+            .bold(),
+        "Record all PC sound EXCEPT Riff and Steam".dimmed()
+    );
 
-    println!("\n{}", "6. AUDIO FORMAT & AI / SPEECH-TO-TEXT PRESETS".yellow().bold());
-    println!("  {:<52} {}", "winaudio record --name Riff -s 16000 -c 1".green().bold(), "16kHz mono (Whisper / Speech-to-Text AI preset)".dimmed());
-    println!("  {:<52} {}", "winaudio record --name Riff -s 48000 -c 2".green().bold(), "48kHz stereo (CD / Studio quality default)".dimmed());
+    println!(
+        "\n{}",
+        "6. AUDIO FORMAT & AI / SPEECH-TO-TEXT PRESETS"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --name Riff -s 16000 -c 1".green().bold(),
+        "16kHz mono (Whisper / Speech-to-Text AI preset)".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio record --name Riff -s 48000 -c 2".green().bold(),
+        "48kHz stereo (CD / Studio quality default)".dimmed()
+    );
 
     println!("\n{}", "7. VOLUME & MUTE CONTROL".yellow().bold());
-    println!("  {:<52} {}", "winaudio volume --name spotify.exe --set 0.50".green().bold(), "Set Spotify master volume to 50%".dimmed());
-    println!("  {:<52} {}", "winaudio volume --pid 15012 --set 0.80".green().bold(), "Set volume by PID to 80%".dimmed());
-    println!("  {:<52} {}", "winaudio mute --name zoom.exe".green().bold(), "Toggle mute state for Zoom".dimmed());
-    println!("  {:<52} {}", "winaudio mute --name zoom.exe --unmute".green().bold(), "Unmute Zoom explicitly".dimmed());
+    println!(
+        "  {:<52} {}",
+        "winaudio volume --name spotify.exe --set 0.50"
+            .green()
+            .bold(),
+        "Set Spotify master volume to 50%".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio volume --pid 15012 --set 0.80".green().bold(),
+        "Set volume by PID to 80%".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio mute --name zoom.exe".green().bold(),
+        "Toggle mute state for Zoom".dimmed()
+    );
+    println!(
+        "  {:<52} {}",
+        "winaudio mute --name zoom.exe --unmute".green().bold(),
+        "Unmute Zoom explicitly".dimmed()
+    );
 
     println!("\n{}", "═".repeat(88).cyan());
-    println!("{}\n", "💡 Tip: You can run any command above directly in PowerShell or CMD.".bright_black());
+    println!(
+        "{}\n",
+        "💡 Tip: You can run any command above directly in PowerShell or CMD.".bright_black()
+    );
 
     Ok(())
 }
@@ -233,7 +359,10 @@ fn cmd_list(show_all: bool) -> Result<()> {
     }
 
     println!("{}", "─".repeat(100).dimmed());
-    println!("Total audio sessions displayed: {}\n", count.to_string().bold());
+    println!(
+        "Total audio sessions displayed: {}\n",
+        count.to_string().bold()
+    );
     Ok(())
 }
 
@@ -319,6 +448,7 @@ fn cmd_mute(pid: Option<u32>, name: Option<String>, unmute: bool) -> Result<()> 
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_record(
     all: bool,
     pid_str: Option<String>,
@@ -330,7 +460,9 @@ fn cmd_record(
     sample_rate: u32,
     channels: u16,
 ) -> Result<()> {
-    let (target, mode) = if all || (pid_str.is_none() && name.is_none() && window.is_none() && exclude.is_none()) {
+    let (target, mode) = if all
+        || (pid_str.is_none() && name.is_none() && window.is_none() && exclude.is_none())
+    {
         (TargetProcess::All, winaudio_core::CaptureMode::Include)
     } else if let Some(ex) = exclude {
         let ex_list: Vec<String> = ex
@@ -360,20 +492,23 @@ fn cmd_record(
                 winaudio_core::CaptureMode::Include,
             )
         } else if let Some(&single_pid) = pid_list.first() {
-            (TargetProcess::ByPid(single_pid), winaudio_core::CaptureMode::Include)
+            (
+                TargetProcess::ByPid(single_pid),
+                winaudio_core::CaptureMode::Include,
+            )
         } else {
             bail!("Invalid PID provided: {}", p);
         }
     } else if let Some(w) = window {
-        (TargetProcess::ByWindowTitle(w), winaudio_core::CaptureMode::Include)
+        (
+            TargetProcess::ByWindowTitle(w),
+            winaudio_core::CaptureMode::Include,
+        )
     } else {
         (TargetProcess::All, winaudio_core::CaptureMode::Include)
     };
 
-    println!(
-        "{} Initializing audio capture engine...",
-        "●".cyan()
-    );
+    println!("{} Initializing audio capture engine...", "●".cyan());
 
     let capture = AudioCapture::builder(target.clone())
         .mode(mode)
@@ -440,7 +575,9 @@ fn cmd_record(
     let pb = ProgressBar::new(duration_secs);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len}s ({msg})")
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len}s ({msg})",
+            )
             .unwrap()
             .progress_chars("#>-"),
     );

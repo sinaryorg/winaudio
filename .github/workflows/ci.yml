@@ -33,5 +33,8 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-msvc'
         run: cargo test --workspace
 
-      - name: Build Release
-        run: cargo build --workspace --release --target ${{ matrix.target }}
+      - name: Build Release CLI
+        run: cargo build --release -p winaudio-cli --target ${{ matrix.target }}
+
+      - name: Build Release Python Extension
+        run: cargo build --release -p winaudio-python --target ${{ matrix.target }}

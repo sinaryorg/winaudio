@@ -18,7 +18,9 @@ use windows::Win32::System::Threading::{
 };
 
 use crate::com::{activate_process_loopback_client, ensure_mta, ProcessLoopbackMode};
-use crate::dsp::{downmix_to_mono, downmix_to_stereo, f32_to_pcm16, pcm16_to_bytes, resample_linear};
+use crate::dsp::{
+    downmix_to_mono, downmix_to_stereo, f32_to_pcm16, pcm16_to_bytes, resample_linear,
+};
 use crate::errors::{Result, WinAudioError};
 use crate::sessions::SessionManager;
 
@@ -190,7 +192,12 @@ impl AudioCapture {
     }
 
     /// Records audio to a standard WAV file for a given duration with an optional progress callback.
-    pub fn record_to_wav_with_progress<F>(&self, path: &str, duration: Duration, mut on_progress_secs: F) -> Result<()>
+    pub fn record_to_wav_with_progress<F>(
+        &self,
+        path: &str,
+        duration: Duration,
+        mut on_progress_secs: F,
+    ) -> Result<()>
     where
         F: FnMut(u64),
     {
@@ -346,7 +353,11 @@ impl AudioCapture {
             stop_signal,
             worker_handle: Some(worker_handle),
             target_pid,
-            resolved_pids: if target_pid > 0 { vec![target_pid] } else { Vec::new() },
+            resolved_pids: if target_pid > 0 {
+                vec![target_pid]
+            } else {
+                Vec::new()
+            },
             config,
         })
     }
@@ -393,9 +404,8 @@ fn capture_worker_loop(
 
     // Boost thread priority with MMCSS
     let mut task_index = 0u32;
-    let avrt_handle = unsafe {
-        AvSetMmThreadCharacteristicsW(windows::core::w!("Audio"), &mut task_index)
-    };
+    let avrt_handle =
+        unsafe { AvSetMmThreadCharacteristicsW(windows::core::w!("Audio"), &mut task_index) };
 
     // Open target process handle to detect process exit (only for single PID include mode)
     let process_handle = if let Some(pid) = target_pid_opt {
@@ -528,10 +538,8 @@ fn capture_worker_loop(
                     let raw_floats: Vec<f32> = if is_silent {
                         vec![0.0f32; total_samples]
                     } else if !p_data.is_null() {
-                        let float_slice = std::slice::from_raw_parts(
-                            p_data as *const f32,
-                            total_samples,
-                        );
+                        let float_slice =
+                            std::slice::from_raw_parts(p_data as *const f32, total_samples);
                         float_slice.to_vec()
                     } else {
                         vec![0.0f32; total_samples]

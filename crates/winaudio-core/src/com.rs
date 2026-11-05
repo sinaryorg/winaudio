@@ -1,12 +1,13 @@
+use crate::errors::{Result, WinAudioError};
 use std::sync::{Arc, Mutex};
 use windows::core::{implement, Interface, HRESULT, PCWSTR, PROPVARIANT};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, S_OK};
 use windows::Win32::Media::Audio::*;
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 use windows::Win32::System::Threading::{CreateEventW, SetEvent, WaitForSingleObject, INFINITE};
-use crate::errors::{Result, WinAudioError};
 
-pub const VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK: PCWSTR = windows::core::w!("VAD\\Process_Loopback");
+pub const VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK: PCWSTR =
+    windows::core::w!("VAD\\Process_Loopback");
 pub const VT_BLOB: u16 = 65;
 
 #[repr(C)]
@@ -120,6 +121,7 @@ impl Drop for AutoHandle {
 
 /// Asynchronously activates an `IAudioClient` configured for process-specific loopback capture
 /// in either INCLUDE or EXCLUDE mode.
+#[allow(clippy::arc_with_non_send_sync)]
 pub fn activate_process_loopback_client(
     target_pid: u32,
     mode: ProcessLoopbackMode,

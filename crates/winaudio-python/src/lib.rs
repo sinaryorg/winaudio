@@ -1,7 +1,9 @@
-use std::time::Duration;
+#![allow(clippy::useless_conversion)]
+
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
+use std::time::Duration;
 
 use winaudio_core::{
     AudioCapture as CoreCapture, AudioFormat, AudioSession as CoreSession, SessionManager,
@@ -40,7 +42,9 @@ impl PyAudioSession {
 
     pub fn set_volume(&self, volume: f32) -> PyResult<()> {
         if self.pid == 0 {
-            return Err(PyValueError::new_err("Cannot adjust volume of system session directly"));
+            return Err(PyValueError::new_err(
+                "Cannot adjust volume of system session directly",
+            ));
         }
         SessionManager::set_volume(self.pid, volume)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
@@ -50,8 +54,7 @@ impl PyAudioSession {
         if self.pid == 0 {
             return Err(PyValueError::new_err("Cannot mute system session directly"));
         }
-        SessionManager::set_mute(self.pid, mute)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        SessionManager::set_mute(self.pid, mute).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     fn __repr__(&self) -> String {
@@ -93,21 +96,19 @@ impl From<CoreSession> for PyAudioSession {
 
 #[pyfunction]
 pub fn list_sessions() -> PyResult<Vec<PyAudioSession>> {
-    let sessions = SessionManager::list_sessions()
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let sessions =
+        SessionManager::list_sessions().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     Ok(sessions.into_iter().map(PyAudioSession::from).collect())
 }
 
 #[pyfunction]
 pub fn set_volume(pid: u32, volume: f32) -> PyResult<()> {
-    SessionManager::set_volume(pid, volume)
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    SessionManager::set_volume(pid, volume).map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
 
 #[pyfunction]
 pub fn set_mute(pid: u32, mute: bool) -> PyResult<()> {
-    SessionManager::set_mute(pid, mute)
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    SessionManager::set_mute(pid, mute).map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
 
 #[pyfunction]
@@ -118,8 +119,7 @@ pub fn set_volume_by_name(name: &str, volume: f32) -> PyResult<()> {
 
 #[pyfunction]
 pub fn set_mute_by_name(name: &str, mute: bool) -> PyResult<()> {
-    winaudio_core::set_mute_by_name(name, mute)
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    winaudio_core::set_mute_by_name(name, mute).map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
 
 #[pyclass(name = "Capture")]
@@ -141,34 +141,38 @@ impl PyCapture {
         sample_rate: u32,
         channels: u16,
     ) -> PyResult<Self> {
-        let (target, mode) = if all || (pid.is_none() && name.is_none() && window.is_none() && exclude.is_none()) {
-            (TargetProcess::All, winaudio_core::CaptureMode::Include)
-        } else if let Some(ex) = exclude {
-            let ex_list: Vec<String> = ex
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            SessionManager::resolve_multi_exclude(&ex_list)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
-        } else if let Some(n) = name {
-            let name_list: Vec<String> = n
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            (
-                SessionManager::resolve_multi_include(&name_list)
-                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
-                winaudio_core::CaptureMode::Include,
-            )
-        } else if let Some(p) = pid {
-            (TargetProcess::ByPid(p), winaudio_core::CaptureMode::Include)
-        } else if let Some(w) = window {
-            (TargetProcess::ByWindowTitle(w), winaudio_core::CaptureMode::Include)
-        } else {
-            (TargetProcess::All, winaudio_core::CaptureMode::Include)
-        };
+        let (target, mode) =
+            if all || (pid.is_none() && name.is_none() && window.is_none() && exclude.is_none()) {
+                (TargetProcess::All, winaudio_core::CaptureMode::Include)
+            } else if let Some(ex) = exclude {
+                let ex_list: Vec<String> = ex
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                SessionManager::resolve_multi_exclude(&ex_list)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+            } else if let Some(n) = name {
+                let name_list: Vec<String> = n
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                (
+                    SessionManager::resolve_multi_include(&name_list)
+                        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
+                    winaudio_core::CaptureMode::Include,
+                )
+            } else if let Some(p) = pid {
+                (TargetProcess::ByPid(p), winaudio_core::CaptureMode::Include)
+            } else if let Some(w) = window {
+                (
+                    TargetProcess::ByWindowTitle(w),
+                    winaudio_core::CaptureMode::Include,
+                )
+            } else {
+                (TargetProcess::All, winaudio_core::CaptureMode::Include)
+            };
 
         let cap = CoreCapture::builder(target)
             .mode(mode)
@@ -202,13 +206,20 @@ impl PyCapture {
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
-    pub fn read_frame<'py>(&self, py: Python<'py>, timeout_ms: u64) -> PyResult<Option<Bound<'py, PyBytes>>> {
+    pub fn read_frame<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_ms: u64,
+    ) -> PyResult<Option<Bound<'py, PyBytes>>> {
         let cap = self
             .capture
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("Capture already closed"))?;
 
-        match cap.receiver().recv_timeout(Duration::from_millis(timeout_ms)) {
+        match cap
+            .receiver()
+            .recv_timeout(Duration::from_millis(timeout_ms))
+        {
             Ok(frame) => {
                 let bytes = frame.as_bytes();
                 Ok(Some(PyBytes::new_bound(py, &bytes)))

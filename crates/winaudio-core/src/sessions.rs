@@ -10,8 +10,7 @@ use windows::Win32::Media::Audio::{
 };
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-    TH32CS_SNAPPROCESS,
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -125,7 +124,9 @@ impl SessionManager {
         let base_exe = tree
             .get(&pid)
             .map(|p| p.exe_name.clone())
-            .unwrap_or_else(|| get_process_name_by_pid(pid).unwrap_or_else(|| format!("PID:{}", pid)));
+            .unwrap_or_else(|| {
+                get_process_name_by_pid(pid).unwrap_or_else(|| format!("PID:{}", pid))
+            });
 
         let direct_title = get_window_title_by_pid(pid);
 
@@ -346,9 +347,10 @@ impl SessionManager {
                     .unwrap_or(&s.process_name)
                     .to_lowercase();
                 let d_clean = s.display_name.to_lowercase();
-                let h_clean = s.host_app_name.as_ref().map(|h| {
-                    h.strip_suffix(".exe").unwrap_or(h).to_lowercase()
-                });
+                let h_clean = s
+                    .host_app_name
+                    .as_ref()
+                    .map(|h| h.strip_suffix(".exe").unwrap_or(h).to_lowercase());
                 let w_clean = s.window_title.as_ref().map(|w| w.to_lowercase());
 
                 p_clean.contains(&clean_query)
@@ -447,7 +449,8 @@ impl SessionManager {
 
         if remaining_pids.is_empty() {
             return Err(WinAudioError::ProcessNotFound(
-                "No remaining active audio sessions found after applying multiple exclusions".into(),
+                "No remaining active audio sessions found after applying multiple exclusions"
+                    .into(),
             ));
         }
 
@@ -459,7 +462,10 @@ impl SessionManager {
         } else {
             Ok((
                 crate::capture::TargetProcess::Multiple(
-                    remaining_pids.into_iter().map(crate::capture::TargetProcess::ByPid).collect(),
+                    remaining_pids
+                        .into_iter()
+                        .map(crate::capture::TargetProcess::ByPid)
+                        .collect(),
                 ),
                 crate::capture::CaptureMode::Include,
             ))
@@ -470,8 +476,7 @@ impl SessionManager {
 /// Helper function to retrieve the executable name for a given PID.
 pub fn get_process_name_by_pid(pid: u32) -> Option<String> {
     unsafe {
-        let handle: HANDLE =
-            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let handle: HANDLE = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buffer = [0u16; MAX_PATH as usize];
         let mut size = buffer.len() as u32;
 
