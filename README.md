@@ -105,18 +105,21 @@ winaudio list --all
 
 #### Record Single Application
 ```cmd
-# Record audio only from Riff (5 seconds default, saved to recorded_audio.wav)
+# Record audio live continuously (press Ctrl+C anytime to stop and save)
 winaudio record --name Riff
 
-# Record Chrome for 10 seconds into a custom file
+# Record for a specific duration (e.g. 10 seconds, 1 hour = 3600s, 2 hours = 7200s)
 winaudio record --name chrome.exe --duration 10 --out chrome.wav
+winaudio record --name Riff --duration 3600 --out 1hr_podcast.wav
 
 # Record by Process ID
-winaudio record --pid 15012 --duration 10 --out app.wav
+winaudio record --pid 15012 --out app.wav
 
 # Record by window title
 winaudio record --window "YouTube" --duration 15 --out video.wav
 ```
+
+> **No Time Limits**: WinAudio is not restricted by time. When `--duration` is omitted, it records live continuously for 1 hour, 2 hours, or longer. Press **`Ctrl + C`** at any time to gracefully finalize and save your complete WAV recording.
 
 #### Record ALL Audio Sources (Master System Loopback)
 ```cmd

@@ -187,14 +187,14 @@ fn cmd_commands() -> Result<()> {
     println!(
         "  {:<52} {}",
         "winaudio record --name Riff".green().bold(),
-        "Record audio only from Riff (5s default, out: recorded_audio.wav)".dimmed()
+        "Record live continuously until Ctrl+C (out: recorded_audio.wav)".dimmed()
     );
     println!(
         "  {:<52} {}",
         "winaudio record --name chrome.exe --duration 10"
             .green()
             .bold(),
-        "Record audio only from Chrome for 10 seconds".dimmed()
+        "Record audio for 10 seconds (or --duration 3600 for 1 hr)".dimmed()
     );
     println!(
         "  {:<52} {}",
@@ -321,7 +321,8 @@ fn cmd_commands() -> Result<()> {
     println!("\n{}", "═".repeat(88).cyan());
     println!(
         "{}\n",
-        "💡 Tip: You can run any command above directly in PowerShell or CMD.".bright_black()
+        "💡 Tip: Omit --duration to record live continuously (1-2+ hrs). Press Ctrl+C anytime to save."
+            .bright_black()
     );
 
     Ok(())

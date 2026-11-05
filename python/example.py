@@ -31,5 +31,9 @@ def main():
     #     cap.record_to_wav("riff.wav", duration_seconds=5.0)
     # print("Saved to riff.wav")
 
+    # Example 3: Long recording (e.g. 1 hour = 3600s, 2 hours = 7200s)
+    # with winaudio.Capture(name="Riff") as cap:
+    #     cap.record_to_wav("podcast_1hr.wav", duration_seconds=3600.0)
+
 if __name__ == "__main__":
     main()
