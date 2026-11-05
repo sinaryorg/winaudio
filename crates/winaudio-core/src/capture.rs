@@ -493,6 +493,21 @@ fn capture_worker_loop(
             }
 
             let mut packet_length = capture_client.GetNextPacketSize()?;
+            if packet_length == 0 && config.silence_padding {
+                let silent_frames = (config.sample_rate as usize * 10) / 1000;
+                let total_samples = silent_frames * (config.channels as usize);
+                let (samples_f32, samples_i16) = match config.format {
+                    AudioFormat::Float32 => (vec![0.0f32; total_samples], Vec::new()),
+                    AudioFormat::Pcm16 => (Vec::new(), vec![0i16; total_samples]),
+                };
+                let frame = AudioFrame {
+                    samples_f32,
+                    samples_i16,
+                    channels: config.channels,
+                    sample_rate: config.sample_rate,
+                };
+                let _ = sender.try_send(frame);
+            }
             while packet_length > 0 {
                 let mut p_data: *mut u8 = std::ptr::null_mut();
                 let mut num_frames_read = 0u32;
