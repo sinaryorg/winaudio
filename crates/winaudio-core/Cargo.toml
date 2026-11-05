@@ -2,8 +2,13 @@
 name = "winaudio-core"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
-description.workspace = true
+repository.workspace = true
+description = "Modern per-process Windows audio capture and session management core engine by SINARY™"
+readme = "README.md"
+keywords = ["windows", "audio", "wasapi", "loopback", "capture"]
+categories = ["multimedia::audio", "os::windows-apis"]
 
 [dependencies]
 windows-core = "0.58"

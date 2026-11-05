@@ -2,8 +2,10 @@
 name = "winaudio-python"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
-description = "Python bindings for WinAudio"
+repository.workspace = true
+description = "Python bindings for WinAudio by SINARY™"
 
 [lib]
 name = "winaudio"

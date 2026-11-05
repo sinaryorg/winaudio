@@ -53,6 +53,29 @@ win_audio/
 
 ---
 
+## 📦 Installation
+
+### 1. Windows Package Manager (`winget`)
+Install the standalone CLI executable directly into your PATH:
+```powershell
+winget install Sinary.WinAudio
+```
+
+### 2. Python Package (`pip`)
+Install the official Python extension module:
+```bash
+pip install winaudio
+```
+
+### 3. Cargo (`crates.io`)
+Add the core Rust engine to your `Cargo.toml`:
+```toml
+[dependencies]
+winaudio-core = "0.1.0"
+```
+
+---
+
 ## 🛠 Building From Source
 
 ### 1. Build the Standalone CLI

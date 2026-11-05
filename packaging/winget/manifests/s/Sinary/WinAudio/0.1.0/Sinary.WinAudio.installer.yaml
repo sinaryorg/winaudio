@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+
+PackageIdentifier: Sinary.WinAudio
+PackageVersion: 0.1.0
+MinimumOSVersion: 10.0.20348.0
+Platform:
+  - Windows.Desktop
+Commands:
+  - winaudio
+Installers:
+  - Architecture: x64
+    InstallerType: portable
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: winaudio.exe
+        PortableCommandAlias: winaudio
+    InstallerUrl: https://github.com/sinaryorg/winaudio/releases/download/v0.1.0/winaudio-v0.1.0-windows-x86_64.zip
+    InstallerSha256: 0A7CC7C0236612EEA86EDF8A5B242215A4DFE9E32E28088670AFF03515BEFC2A
+    UpgradeBehavior: uninstallPrevious
+ManifestType: installer
+ManifestVersion: 1.6.0

@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build-cli:
+    name: Build CLI (Windows x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build CLI Binary
+        run: cargo build --release -p winaudio-cli
+
+      - name: Package CLI Archive
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v0.1.0' }
+          $zipName = "winaudio-$tag-windows-x86_64.zip"
+          
+          New-Item -ItemType Directory -Path staging -Force | Out-Null
+          Copy-Item target/release/winaudio.exe -Destination staging/
+          Copy-Item README.md -Destination staging/
+          Copy-Item LICENSE-MIT -Destination staging/
+          Copy-Item LICENSE-APACHE -Destination staging/
+
+          Compress-Archive -Path staging/* -DestinationPath $zipName -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $zipName).Hash.ToLower()
+          "$hash *$zipName" | Out-File -Encoding utf8 "$zipName.sha256"
+
+          New-Item -ItemType Directory -Path dist_cli -Force | Out-Null
+          Move-Item $zipName dist_cli/
+          Move-Item "$zipName.sha256" dist_cli/
+
+      - name: Upload CLI Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-release
+          path: dist_cli/*
+
+  build-wheels:
+    name: Build Python Wheels (Python ${{ matrix.python-version }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+
+      - name: Build Wheel via Maturin
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --manifest-path crates/winaudio-python/Cargo.toml --out dist
+          target: x86_64-pc-windows-msvc
+
+      - name: Upload Wheel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-cp${{ matrix.python-version }}
+          path: dist/*.whl
+
+  publish:
+    name: Publish GitHub Release & PyPI
+    needs: [build-cli, build-wheels]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded_artifacts
+
+      - name: Consolidate Release Assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release_assets -Force | Out-Null
+          Get-ChildItem -Path downloaded_artifacts -Recurse -File | ForEach-Object {
+            Copy-Item $_.FullName -Destination release_assets/ -Force
+          }
+          Get-ChildItem release_assets
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: release_assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Publish to PyPI
+        if: env.MATURIN_PYPI_TOKEN != ''
+        env:
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip twine
+          python -m twine upload --skip-existing release_assets/*.whl -u __token__ -p $env:MATURIN_PYPI_TOKEN

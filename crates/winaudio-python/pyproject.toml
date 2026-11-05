@@ -5,17 +5,49 @@ build-backend = "maturin"
 [project]
 name = "winaudio"
 version = "0.1.0"
-description = "Modern per-process Windows audio capture, session routing, and volume control"
+description = "Modern per-process Windows audio capture, session routing, and volume control library by SINARY™"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT OR Apache-2.0" }
+authors = [
+    { name = "SINARY™" },
+]
+keywords = [
+    "windows",
+    "wasapi",
+    "audio",
+    "capture",
+    "loopback",
+    "process-loopback",
+    "recording",
+    "volume",
+    "sound",
+    "streaming",
+]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: Microsoft :: Windows",
     "Topic :: Multimedia :: Sound/Audio :: Capture/Recording",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+
+[project.urls]
+Homepage = "https://github.com/sinaryorg/winaudio"
+Repository = "https://github.com/sinaryorg/winaudio"
+Documentation = "https://github.com/sinaryorg/winaudio#readme"
+"Issue Tracker" = "https://github.com/sinaryorg/winaudio/issues"
 
 [tool.maturin]
 module-name = "winaudio"

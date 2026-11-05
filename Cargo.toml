@@ -9,7 +9,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["WinAudio Contributors"]
+authors = ["SINARY™"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/win-audio/winaudio"
-description = "Modern per-process Windows audio capture, session routing, and volume control library"
+repository = "https://github.com/sinaryorg/winaudio"
+description = "Modern per-process Windows audio capture, session routing, and volume control library by SINARY™"
