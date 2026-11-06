@@ -3,7 +3,7 @@ requires = ["maturin>=1.5,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "winaudio"
+name = "sinary-winaudio"
 version = "0.1.0"
 description = "Modern per-process Windows audio capture, session routing, and volume control library by SINARY™"
 readme = "README.md"

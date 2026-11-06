@@ -64,7 +64,7 @@ winget install Sinary.WinAudio
 ### 2. Python Package (`pip`)
 Install the official Python extension module:
 ```bash
-pip install winaudio
+pip install sinary-winaudio
 ```
 
 ### 3. Cargo (`crates.io`)

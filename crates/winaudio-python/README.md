@@ -1,6 +1,6 @@
 # WinAudio Python API
 
-[![PyPI version](https://img.shields.io/pypi/v/winaudio.svg)](https://pypi.org/project/winaudio/)
+[![PyPI version](https://img.shields.io/pypi/v/sinary-winaudio.svg)](https://pypi.org/project/sinary-winaudio/)
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/sinaryorg/winaudio)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2021H2%2B%20%2F%2011-0078D6.svg)](https://github.com/sinaryorg/winaudio)
 
@@ -24,7 +24,7 @@ Powered by native Windows WASAPI Process Loopback APIs (`AUDIOCLIENT_ACTIVATION_
 ## Installation
 
 ```bash
-pip install winaudio
+pip install sinary-winaudio
 ```
 
 ### System Requirements

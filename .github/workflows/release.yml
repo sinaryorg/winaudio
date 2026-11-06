@@ -115,4 +115,5 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip twine
-          python -m twine upload --skip-existing release_assets/*.whl -u __token__ -p $env:MATURIN_PYPI_TOKEN
+          $wheels = Get-ChildItem -Path release_assets -Filter "*.whl" | ForEach-Object { $_.FullName }
+          python -m twine upload --skip-existing $wheels -u __token__ -p $env:MATURIN_PYPI_TOKEN --verbose
