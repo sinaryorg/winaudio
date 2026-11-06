@@ -1,0 +1,21 @@
+{
+    "version": "0.1.0",
+    "description": "Modern per-process Windows audio capture, session routing, and volume control library by SINARY™",
+    "homepage": "https://github.com/sinaryorg/winaudio",
+    "license": "MIT|Apache-2.0",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/sinaryorg/winaudio/releases/download/v0.1.0/winaudio-v0.1.0-windows-x86_64.zip",
+            "hash": "43f9b49eafb15666709c6343608a97ca0fe5cd859b97bc1ae6d82202bfb61cd6"
+        }
+    },
+    "bin": "winaudio.exe",
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/sinaryorg/winaudio/releases/download/v$version/winaudio-v$version-windows-x86_64.zip"
+            }
+        }
+    }
+}
