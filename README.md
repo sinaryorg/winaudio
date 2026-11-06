@@ -1,5 +1,10 @@
 # 🔊 WinAudio
 
+[![Crates.io Core](https://img.shields.io/crates/v/winaudio-core.svg?label=crates.io%20(core))](https://crates.io/crates/winaudio-core)
+[![Crates.io CLI](https://img.shields.io/crates/v/winaudio-cli.svg?label=crates.io%20(cli))](https://crates.io/crates/winaudio-cli)
+[![PyPI version](https://img.shields.io/pypi/v/sinary-winaudio.svg?label=PyPI%20(python))](https://pypi.org/project/sinary-winaudio/)
+[![Winget](https://img.shields.io/badge/winget-Sinary.WinAudio-blue.svg)](https://github.com/microsoft/winget-pkgs/pull/471852)
+[![GitHub Release](https://img.shields.io/github/v/release/sinaryorg/winaudio.svg?label=release)](https://github.com/sinaryorg/winaudio/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20(21H2%2B)%20%7C%20Windows%2011-0078D6.svg)](https://microsoft.com/windows)
 [![Privacy: Local Only](https://img.shields.io/badge/privacy-local--only-success.svg)](PRIVACY.md)
@@ -61,14 +66,24 @@ Install the standalone CLI executable directly into your PATH:
 winget install Sinary.WinAudio
 ```
 
-### 2. Python Package (`pip`)
-Install the official Python extension module:
+### 2. Scoop (Windows Developer Package Manager)
+Install via Scoop without administrator prompts:
+```powershell
+scoop install https://raw.githubusercontent.com/sinaryorg/winaudio/main/packaging/scoop/winaudio.json
+```
+
+### 3. Python Package (`pip`)
+Install the precompiled binary Python extension module (supports Python 3.8 to 3.13):
 ```bash
 pip install sinary-winaudio
 ```
 
-### 3. Cargo (`crates.io`)
-Add the core Rust engine to your `Cargo.toml`:
+### 4. Cargo / Rust (`crates.io`)
+Install the standalone CLI binary:
+```bash
+cargo install winaudio-cli
+```
+Or add the core Rust audio capture engine to your project's `Cargo.toml`:
 ```toml
 [dependencies]
 winaudio-core = "0.1.0"
@@ -245,7 +260,7 @@ Add the local crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-winaudio-core = { path = "crates/winaudio-core" }
+winaudio-core = "0.1.0"
 ```
 
 ```rust
