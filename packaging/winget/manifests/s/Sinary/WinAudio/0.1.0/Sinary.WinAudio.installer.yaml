@@ -15,7 +15,7 @@ Installers:
       - RelativeFilePath: winaudio.exe
         PortableCommandAlias: winaudio
     InstallerUrl: https://github.com/sinaryorg/winaudio/releases/download/v0.1.0/winaudio-v0.1.0-windows-x86_64.zip
-    InstallerSha256: 0A7CC7C0236612EEA86EDF8A5B242215A4DFE9E32E28088670AFF03515BEFC2A
+    InstallerSha256: 43F9B49EAFB15666709C6343608A97CA0FE5CD859B97BC1AE6D82202BFB61CD6
     UpgradeBehavior: uninstallPrevious
 ManifestType: installer
 ManifestVersion: 1.6.0
